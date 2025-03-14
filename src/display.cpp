@@ -199,17 +199,17 @@ void drawWeatherScreen() {
   // Draw "TODAY" label
   u8g2.setFont(u8g2_font_t0_11_tf);
   int todayWidth = u8g2.getStrWidth("TODAY");
-  u8g2.drawStr(23 - todayWidth / 2, 10, "TODAY");  // Centered at x=23
+  u8g2.drawStr(21 - todayWidth / 2, 10, "TODAY");  // Centered at x=21
   
   // Draw current weather icon
   byte currentIconType = getWeatherIconType(currentCondition);
-  drawWeatherIcon(23, 28, currentIconType, 3);  // Icon centered at x=23
+  drawWeatherIcon(21, 28, currentIconType, 3);  // Icon centered at x=21
   
   // Draw current temperature
   char tempStr[10];
   sprintf(tempStr, "%d°", currentTemp);
   int tempWidth = u8g2.getStrWidth(tempStr);
-  u8g2.drawUTF8(23 - tempWidth / 2, 50, tempStr);  // Ensure it's centered at x=23
+  u8g2.drawUTF8(21 - tempWidth / 2, 50, tempStr);  // Ensure it's centered at x=21
   
   // Draw vertical divider - moved further left
   int dividerX = 43;  // Moved further left from 45 to 43
