@@ -199,26 +199,35 @@ void drawWeatherScreen() {
   // Draw "TODAY" label
   u8g2.setFont(u8g2_font_t0_11_tf);
   int todayWidth = u8g2.getStrWidth("TODAY");
-  u8g2.drawStr(21 - todayWidth / 2, 10, "TODAY");  // Centered at x=21
+  int centerX = 22; // Define center point for all elements
+  u8g2.drawStr(centerX - todayWidth / 2, 10, "TODAY");
   
   // Draw current weather icon
   byte currentIconType = getWeatherIconType(currentCondition);
-  drawWeatherIcon(21, 28, currentIconType, 3);  // Icon centered at x=21
+  drawWeatherIcon(centerX, 32, currentIconType, 3);  // Moved down to y=32
   
   // Draw current temperature
-  char tempStr[10];
-  sprintf(tempStr, "%d°", currentTemp);
+  // Use a larger font for the temperature
+  u8g2.setFont(u8g2_font_logisoso16_tr);  // Larger font for temperature
+  char tempStr[8];
+  sprintf(tempStr, "%d", currentTemp);  // Just the number first
   int tempWidth = u8g2.getStrWidth(tempStr);
-  u8g2.drawUTF8(21 - tempWidth / 2, 50, tempStr);  // Ensure it's centered at x=21
   
-  // Draw vertical divider - moved further left
-  int dividerX = 43;  // Moved further left from 45 to 43
+  // Draw the temperature number centered
+  u8g2.drawStr(centerX - tempWidth / 2, 54, tempStr);
+  
+  // Add the degree symbol with the smaller font
+  u8g2.setFont(u8g2_font_t0_11_tf);
+  u8g2.drawUTF8(centerX + tempWidth / 2, 50, "°");
+  
+  // Draw vertical divider
+  int dividerX = 43;
   for (int y = 8; y <= 56; y += 3) {
     u8g2.drawPixel(dividerX, y);
   }
   
   // Draw forecast grid with more space
-  int startX = 45 + 6;  // Keep the forecast grid at the same position
+  int forecastStartX = 45 + 10;  // Increased spacing between divider and forecast
   int startY = 10;
   int colWidth = 25;  // Slightly increased column width to fill the extra space
   int rowHeight = 27;
@@ -231,7 +240,7 @@ void drawWeatherScreen() {
   for (int row = 0; row < 2; row++) {
     for (int col = 0; col < 3; col++) {
       int index = row * 3 + col;  // Convert row/col to array index (0-5)
-      int x = startX + col * colWidth;
+      int x = forecastStartX + col * colWidth;
       int y = startY + row * rowHeight;
       
       // Draw day abbreviation
