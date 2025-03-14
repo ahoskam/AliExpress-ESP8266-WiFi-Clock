@@ -1,303 +1,229 @@
 /*
- * ESP-01 Weather & Time Display
+ * ESP-01 Weather & Time Display with WiFi Manager
  * Using Arduino Framework with U8g2 Library
  * For ESP-01 with 0.96" OLED display
- * Improved forecast grid spacing
  */
 
 #include <Arduino.h>
-#include <Wire.h>
-#include <U8g2lib.h>
-
-// Define pins for I2C on ESP-01 (correct assignment)
-#define SDA_PIN 0  // GPIO0
-#define SCL_PIN 2  // GPIO2
-
-// Initialize U8g2 display instance with software I2C
-// Using U8G2_R2 to rotate display 180 degrees (fix upside-down issue)
-U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R2, SCL_PIN, SDA_PIN, U8X8_PIN_NONE);
-
-// Screen switching interval (30 seconds)
-const unsigned long SCREEN_SWITCH_INTERVAL = 30000;
-unsigned long lastScreenChange = 0;
-bool showTimeScreen = true;
-
-// Time & Date variables - in real project, these would come from NTP
-int hours = 10;
-int minutes = 42;
-String dayOfWeek = "WED";
-String month = "MAR";
-int dayOfMonth = 12;
-
-// Weather variables - in real project, these would come from a weather API
-int currentTemp = 24;
-int lowTemp = 16;
-String currentCondition = "SUNNY";
-
-// Sun position variables
-int sunriseHour = 6;
-int sunsetHour = 18;
-int currentHour = 10; // Would come from NTP in real implementation
-
-// Weather forecast data structure
-struct WeatherDay {
-  String day;
-  int temp;
-  byte iconType; // 0=sunny, 1=partly cloudy, 2=cloudy, 3=foggy, 4=rainy, 5=snowy
-};
-
-// Weather forecast data - would come from API in real implementation
-WeatherDay forecast[6] = {
-  {"THU", 23, 0}, // Sunny
-  {"FRI", 21, 1}, // Partly cloudy
-  {"SAT", 19, 2}, // Cloudy
-  {"SUN", 17, 3}, // Foggy
-  {"MON", 20, 4}, // Rainy
-  {"TUE", 22, 0}  // Sunny
-};
-
-// Custom weather icons as 8x8 bitmaps
-static const uint8_t sunny_icon[] = {
-  0x10, // 00010000
-  0x54, // 01010100
-  0x38, // 00111000
-  0xFE, // 11111110
-  0x38, // 00111000
-  0x54, // 01010100
-  0x10, // 00010000
-  0x00  // 00000000
-};
-
-static const uint8_t partly_cloudy_icon[] = {
-  0x08, // 00001000
-  0x54, // 01010100
-  0x38, // 00111000
-  0x44, // 01000100
-  0x3E, // 00111110
-  0x00, // 00000000
-  0x00, // 00000000
-  0x00  // 00000000
-};
-
-static const uint8_t cloudy_icon[] = {
-  0x00, // 00000000
-  0x00, // 00000000
-  0x78, // 01111000
-  0x84, // 10000100
-  0xFE, // 11111110
-  0x00, // 00000000
-  0x00, // 00000000
-  0x00  // 00000000
-};
-
-static const uint8_t foggy_icon[] = {
-  0x00, // 00000000
-  0xEE, // 11101110
-  0x00, // 00000000
-  0xFE, // 11111110
-  0x00, // 00000000
-  0x7C, // 01111100
-  0x00, // 00000000
-  0x00  // 00000000
-};
-
-static const uint8_t rainy_icon[] = {
-  0x78, // 01111000
-  0xFC, // 11111100
-  0x00, // 00000000
-  0x28, // 00101000
-  0x28, // 00101000
-  0x00, // 00000000
-  0x00, // 00000000
-  0x00  // 00000000
-};
-
-static const uint8_t snowy_icon[] = {
-  0x78, // 01111000
-  0xFC, // 11111100
-  0x00, // 00000000
-  0x10, // 00010000
-  0x38, // 00111000
-  0x10, // 00010000
-  0x00, // 00000000
-  0x00  // 00000000
-};
-
-// Draw weather icon based on type
-void drawWeatherIcon(int x, int y, byte iconType, byte size) {
-  const uint8_t* icon;
-  
-  // Select icon based on type
-  switch(iconType) {
-    case 0: icon = sunny_icon; break;
-    case 1: icon = partly_cloudy_icon; break;
-    case 2: icon = cloudy_icon; break;
-    case 3: icon = foggy_icon; break;
-    case 4: icon = rainy_icon; break;
-    case 5: icon = snowy_icon; break;
-    default: icon = sunny_icon;
-  }
-  
-  // Draw the icon scaled to size
-  if (size == 1) {
-    // Small 8x8 icon
-    u8g2.drawXBM(x - 4, y - 4, 8, 8, icon);
-  } else if (size == 2) {
-    // Medium 16x16 icon (scaled version of 8x8)
-    for (int i = 0; i < 8; i++) {
-      for (int j = 0; j < 8; j++) {
-        if (icon[i] & (1 << j)) {
-          u8g2.drawBox(x - 8 + j*2, y - 8 + i*2, 2, 2);
-        }
-      }
-    }
-  } else {
-    // Large icon (size 3 or more - scaled version of 8x8)
-    for (int i = 0; i < 8; i++) {
-      for (int j = 0; j < 8; j++) {
-        if (icon[i] & (1 << j)) {
-          u8g2.drawBox(x - 12 + j*3, y - 12 + i*3, 3, 3);
-        }
-      }
-    }
-  }
-}
-
-// Draw the time screen with sun position indicator
-void drawTimeScreen() {
-  // Format time with leading zero if needed
-  char timeStr[6];
-  sprintf(timeStr, "%02d:%02d", hours, minutes);
-  
-  // Format date
-  char dateStr[12];
-  sprintf(dateStr, "%s %s %d", dayOfWeek.c_str(), month.c_str(), dayOfMonth);
-  
-  // Draw time in large font
-  u8g2.setFont(u8g2_font_inb19_mn);
-  int timeWidth = u8g2.getStrWidth(timeStr);
-  u8g2.drawStr(64 - timeWidth / 2, 30, timeStr);
-  
-  // Draw date in smaller font
-  u8g2.setFont(u8g2_font_t0_11_tf);
-  int dateWidth = u8g2.getStrWidth(dateStr);
-  u8g2.drawStr(64 - dateWidth / 2, 45, dateStr);
-  
-  // Draw sun position bar
-  int barStart = 24;
-  int barEnd = 104;
-  int barY = 55;
-  
-  // Draw bar line (dashed)
-  for (int x = barStart; x <= barEnd; x += 4) {
-    u8g2.drawPixel(x, barY);
-    u8g2.drawPixel(x + 1, barY);
-  }
-  
-  // Calculate sun position
-  int dayMinutes = (currentHour - sunriseHour) * 60 + minutes;
-  int totalDayMinutes = (sunsetHour - sunriseHour) * 60;
-  float progress = constrain((float)dayMinutes / totalDayMinutes, 0.0, 1.0);
-  int sunX = barStart + progress * (barEnd - barStart);
-  
-  // Draw sunrise icon (circle with rays)
-  u8g2.drawCircle(barStart, barY, 2, U8G2_DRAW_ALL);
-  u8g2.drawLine(barStart, barY - 3, barStart, barY - 5);
-  u8g2.drawLine(barStart - 3, barY, barStart - 5, barY);
-  u8g2.drawLine(barStart - 2, barY - 2, barStart - 3, barY - 3);
-  
-  // Draw sunset icon (circle with rays)
-  u8g2.drawCircle(barEnd, barY, 2, U8G2_DRAW_ALL);
-  u8g2.drawLine(barEnd, barY - 3, barEnd, barY - 5);
-  u8g2.drawLine(barEnd + 3, barY, barEnd + 5, barY);
-  u8g2.drawLine(barEnd + 2, barY - 2, barEnd + 3, barY - 3);
-  
-  // Draw sun position indicator (circle)
-  u8g2.drawCircle(sunX, barY, 3, U8G2_DRAW_ALL);
-}
-
-// Draw the weather screen with forecast
-void drawWeatherScreen() {
-  // ===== IMPROVED LAYOUT =====
-  // Reduce the size of the "today" section slightly
-  // Move the divider left to give more space for the forecast grid
-  
-  // Draw "TODAY" label
-  u8g2.setFont(u8g2_font_t0_11_tf);
-  int todayWidth = u8g2.getStrWidth("TODAY");
-  u8g2.drawStr(28 - todayWidth / 2, 10, "TODAY");  // Moved left from 32 to 28
-  
-  // Draw current weather icon
-  byte currentIconType = 0; // Assuming sunny for current weather
-  drawWeatherIcon(28, 28, currentIconType, 3);  // Moved left from 32 to 28
-  
-  // Draw current temperature
-  char tempStr[5];
-  sprintf(tempStr, "%d°", currentTemp);
-  int tempWidth = u8g2.getStrWidth(tempStr);
-  u8g2.drawUTF8(28 - tempWidth / 2, 50, tempStr);  // Moved left from 32 to 28
-  
-  // Draw vertical divider - moved left to give more space for forecast
-  int dividerX = 58;  // Moved from 64 to 58
-  for (int y = 8; y <= 56; y += 3) {
-    u8g2.drawPixel(dividerX, y);
-  }
-  
-  // ===== IMPROVED FORECAST GRID =====
-  // Start the grid further left
-  // Increase column width for better spacing between days
-  
-  // Draw 6-day forecast (2x3 grid)
-  int startX = dividerX + 8;  // Start 8 pixels right of divider (was 70)
-  int startY = 10;
-  int colWidth = 22;  // Increased from 20 to 22
-  int rowHeight = 27;
-  
-  for (int row = 0; row < 2; row++) {
-    for (int col = 0; col < 3; col++) {
-      int index = row * 3 + col;
-      int x = startX + col * colWidth;
-      int y = startY + row * rowHeight;
-      
-      // Draw day abbreviation
-      u8g2.setFont(u8g2_font_t0_11_tf);
-      u8g2.drawStr(x, y, forecast[index].day.c_str());
-      
-      // Draw weather icon
-      drawWeatherIcon(x + 7, y + 10, forecast[index].iconType, 1);
-      
-      // Draw temperature
-      char smallTempStr[5];
-      sprintf(smallTempStr, "%d°", forecast[index].temp);
-      int smallTempWidth = u8g2.getStrWidth(smallTempStr);
-      u8g2.drawUTF8(x + 7 - smallTempWidth / 2, y + 20, smallTempStr);
-    }
-  }
-}
+#include "config.h"
+#include "wifi_manager.h"
+#include "time_manager.h"
+#include "weather.h"
+#include "display.h"
 
 void setup() {
   // Initialize serial communication
   Serial.begin(115200);
-  Serial.println("\n\nESP-01 Weather & Time Display");
+  
+  // Disable the blue LED on ESP8266
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED on most ESP8266 boards
+  
+  // Add startup delay to see serial output
+  delay(2000);
+  
+  Serial.println("\n\n====================================================");
+  Serial.println("ESP-01 Weather & Time Display with WiFi Manager");
+  Serial.println("====================================================");
   
   // Initialize display
   u8g2.begin();
   Serial.println("Display initialized");
   
-  // Initial display update
-  lastScreenChange = millis();
+  // Show startup message
+  drawConnectingScreen("Starting up...", "Initializing");
+  delay(1000);
   
-  // In a real application, you would initialize WiFi here
-  // and connect to a weather API and NTP server
+  // Initialize EEPROM
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Debug info about EEPROM config
+  bool isConfigured = (EEPROM.read(CONFIG_FLAG_OFFSET) == 1);
+  Serial.print("EEPROM Config Flag: ");
+  Serial.println(isConfigured ? "SET (1)" : "NOT SET (0)");
+  EEPROM.end();
+  
+  // Load saved settings for city/state
+  drawConnectingScreen("Starting up...", "Loading settings");
+  loadSettings();
+  
+  // Check if city name is valid, if not reset it
+  if (cityName.length() == 0 || cityName == "_") {
+    Serial.println("City name is invalid, resetting to default and saving");
+    cityName = "New York";
+    stateName = "NY";
+    timezone = -5.0f; // Set default timezone to Eastern Time
+    
+    // Save settings to EEPROM directly
+    EEPROM.begin(EEPROM_SIZE);
+    
+    // Save city name
+    for (size_t i = 0; i < 50; i++) {
+      if (i < cityName.length()) {
+        EEPROM.write(CITY_OFFSET + i, cityName[i]);
+      } else {
+        EEPROM.write(CITY_OFFSET + i, 0);
+      }
+    }
+    
+    // Save state code
+    for (size_t i = 0; i < 2; i++) {
+      if (i < stateName.length()) {
+        EEPROM.write(STATE_OFFSET + i, stateName[i]);
+      } else {
+        EEPROM.write(STATE_OFFSET + i, 0);
+      }
+    }
+    
+    // Save update interval
+    byte intervalBytes[4];
+    memcpy(intervalBytes, &WEATHER_UPDATE_INTERVAL, 4);
+    for (int i = 0; i < 4; i++) {
+      EEPROM.write(UPDATE_INTERVAL_OFFSET + i, intervalBytes[i]);
+    }
+    
+    // Save timezone
+    byte timezoneBytes[4];
+    memcpy(timezoneBytes, &timezone, 4);
+    for (int i = 0; i < 4; i++) {
+      EEPROM.write(TIMEZONE_OFFSET + i, timezoneBytes[i]);
+    }
+    
+    EEPROM.commit();
+    EEPROM.end();
+    
+    Serial.println("Default settings saved to EEPROM");
+    delay(1000);
+  }
+  
+  // Clear the configuration flag for testing (REMOVE THIS IN PRODUCTION)
+  // Uncomment this line to reset the saved WiFi credentials
+  // EEPROM.begin(EEPROM_SIZE);
+  // EEPROM.write(CONFIG_FLAG_OFFSET, 0);
+  // EEPROM.commit();
+  // EEPROM.end();
+  // Serial.println("WARNING: Cleared WiFi credentials for testing");
+  // delay(2000);
+  
+  // Display current credentials status
+  if (isConfigured) {
+    drawConnectingScreen("WiFi configuration", "found");
+  } else {
+    drawConnectingScreen("No WiFi config", "Will start portal");
+  }
+  delay(1000);
+  
+  // Try to connect to saved WiFi
+  connectToWifi();
+  
+  // Disable WiFi status LED again (WiFi connection might have enabled it)
+  digitalWrite(LED_BUILTIN, HIGH);
+  
+  // After WiFi connection, setup NTP
+  if (WiFi.status() == WL_CONNECTED) {
+    // Setup NTP client
+    drawConnectingScreen("Setting up", "NTP time sync");
+    setupNTP();
+    
+    // Get current time
+    drawConnectingScreen("Updating", "time & date");
+    updateTimeAndDate();
+    
+    // Fetch weather data
+    drawConnectingScreen("Fetching", "weather data");
+    fetchWeatherData();
+  }
 }
 
 void loop() {
+  // Handle DNS requests
+  dnsServer.processNextRequest();
+  
+  // Handle web server requests
+  server.handleClient();
+  
+  // Keep LED off (some operations might turn it on)
+  static unsigned long lastLedCheck = 0;
+  if (millis() - lastLedCheck >= 1000) { // Check every second
+    digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED
+    lastLedCheck = millis();
+  }
+  
+  // If in AP mode, keep showing the configuration screen
+  if (WiFi.getMode() == WIFI_AP) {
+    // Refresh the configuration screen periodically
+    static unsigned long lastRefresh = 0;
+    if (millis() - lastRefresh >= 5000) {
+      drawConfigMode();
+      lastRefresh = millis();
+    }
+    return;
+  }
+  
+  // Check WiFi connection status periodically
+  static unsigned long lastWifiCheck = 0;
+  static bool webServerChecked = false;
+  
+  if (millis() - lastWifiCheck >= 30000) { // Check every 30 seconds
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WARNING: WiFi connection lost, attempting to reconnect");
+      // Try a quick reconnect first
+      int reconnectAttempts = 0;
+      while (WiFi.status() != WL_CONNECTED && reconnectAttempts < 6) {
+        drawConnectingScreen("Connection lost", "Reconnecting...");
+        delay(1000);
+        reconnectAttempts++;
+      }
+      
+      // If still not connected, try full reconnect
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Reconnection failed, trying full reconnect");
+        webServerChecked = false; // Reset flag to check web server again after reconnect
+        connectToWifi();
+      }
+    } else if (!webServerChecked) {
+      // Ensure web server is running in STA mode (only once after connection)
+      Serial.println("Ensuring web server is running in STA mode");
+      server.stop();
+      delay(500);
+      setupWebServer();
+      server.begin();
+      Serial.println("Web server restarted at http://" + WiFi.localIP().toString());
+      webServerChecked = true;
+    }
+    lastWifiCheck = millis();
+  }
+  
+  // Update the internal clock
+  updateCurrentTime();
+  
+  // Check if WiFi is connected and time not initialized
+  if (WiFi.status() == WL_CONNECTED && !timeInitialized) {
+    updateTimeAndDate();
+  }
+  
+  // Update time from NTP every hour
+  static unsigned long lastTimeUpdate = 0;
+  if (millis() - lastTimeUpdate >= 60 * 60 * 1000) { // 1 hour
+    updateTimeAndDate();
+    lastTimeUpdate = millis();
+  }
+  
+  // Update weather data periodically
+  if (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL) {
+    Serial.println("Time to update weather data");
+    if (fetchWeatherData()) {
+      Serial.println("Weather data updated successfully");
+    } else {
+      Serial.println("Failed to update weather data");
+    }
+  }
+  
   // Check if it's time to switch screens
   unsigned long currentMillis = millis();
   if (currentMillis - lastScreenChange >= SCREEN_SWITCH_INTERVAL) {
     showTimeScreen = !showTimeScreen;
     lastScreenChange = currentMillis;
-    Serial.println(showTimeScreen ? "Switching to time screen" : "Switching to weather screen");
   }
   
   // Update display
@@ -315,6 +241,4 @@ void loop() {
   
   // Short delay to prevent too frequent updates
   delay(100);
-  
-  // In a real application, you would periodically update the time and weather data
 }
