@@ -204,7 +204,7 @@ void drawWeatherScreen() {
   
   // Draw current weather icon
   byte currentIconType = getWeatherIconType(currentCondition);
-  drawWeatherIcon(centerX, 32, currentIconType, 3);  // Moved down to y=32
+  drawWeatherIcon(centerX - 1, 29, currentIconType, 3);  // Moved up by 2 pixels for better separation from temperature
   
   // Draw current temperature
   // Use a larger font for the temperature
