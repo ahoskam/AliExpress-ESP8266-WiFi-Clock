@@ -10,8 +10,6 @@
 
 // Load WiFi configuration from EEPROM
 bool loadWiFiConfig() {
-  // Add delay at startup to make serial monitoring easier
-  delay(1000);
   Serial.println("\n\n============ LOADING WIFI CONFIG ============");
   
   EEPROM.begin(EEPROM_SIZE);
@@ -31,40 +29,18 @@ bool loadWiFiConfig() {
   // Read the stored lengths
   uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
   uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
-  Serial.printf("Stored SSID length: %d\n", ssidLen);
-  Serial.printf("Stored password length: %d\n", passLen);
   
   // Read SSID and password directly (no encryption)
   char ssid[32] = {0};
   char password[64] = {0};
   
-  Serial.println("Reading WiFi credentials from EEPROM...");
-  
   // Read the SSID
-  for (int i = 0; i < 32; i++) {
-    byte b = EEPROM.read(WIFI_SSID_OFFSET + i);
-    ssid[i] = b;
-    if (i < ssidLen) {
-      Serial.printf("%02X ", b);
-    }
-    if (i % 8 == 7 && i < ssidLen) Serial.println();
+  for (size_t i = 0; i < 32; i++) {
+    ssid[i] = EEPROM.read(WIFI_SSID_OFFSET + i);
   }
-  Serial.println();
   
   // Read the password
-  Serial.println("Raw password bytes from EEPROM (hex, first 16 bytes):");
-  for (int i = 0; i < 16; i++) {
-    byte b = EEPROM.read(WIFI_PASS_OFFSET + i);
-    password[i] = b;
-    if (i < passLen) {
-      Serial.printf("%02X ", b);
-    }
-    if (i % 8 == 7 && i < 16) Serial.println();
-  }
-  Serial.println();
-  
-  // Read the rest of the password
-  for (int i = 16; i < 64; i++) {
+  for (size_t i = 0; i < 64; i++) {
     password[i] = EEPROM.read(WIFI_PASS_OFFSET + i);
   }
   
@@ -79,17 +55,6 @@ bool loadWiFiConfig() {
     password[passLen] = '\0';
   }
   
-  // Show the results on the display for debugging
-  drawConnectingScreen("Loading credentials", "SSID: " + String(ssid));
-  delay(2000);
-  
-  Serial.println("Credentials loaded:");
-  Serial.print("SSID: '");
-  Serial.print(ssid);
-  Serial.println("'");
-  Serial.print("Password length: ");
-  Serial.println(strlen(password));
-  
   // Make sure we have valid credentials
   if (strlen(ssid) == 0 || !isprint(ssid[0])) {
     Serial.println("ERROR: No valid SSID found, returning to setup mode");
@@ -98,25 +63,10 @@ bool loadWiFiConfig() {
   
   // Display SSID for debugging
   Serial.println("============ Preparing to connect ============");
-  Serial.print("Will attempt to connect to SSID: '");
-  Serial.print(ssid);
-  Serial.println("'");
-  Serial.print("With password of length: ");
-  Serial.println(strlen(password));
+  Serial.printf("Will attempt to connect to SSID: '%s'\n", ssid);
+  Serial.printf("With password of length: %d\n", strlen(password));
   
-  // Wait for a moment to let user read the debug info
-  Serial.println("Starting connection process in 2 seconds...");
-  delay(2000);
-  
-  // Set STA mode explicitly
-  WiFi.mode(WIFI_STA);
-  
-  // Try to disconnect first if already connected
-  WiFi.disconnect();
-  delay(100);
-  
-  // Attempt to connect to saved WiFi
-  Serial.println("Starting WiFi connection...");
+  // Store credentials in WiFi
   WiFi.begin(ssid, password);
   
   return true;
@@ -165,7 +115,7 @@ void saveWiFiConfig(const char* ssid, const char* password) {
   EEPROM.write(CONFIG_FLAG_OFFSET, 1);
   
   // Write SSID directly
-  for (int i = 0; i < 32; i++) {
+  for (size_t i = 0; i < 32; i++) {
     if (i < ssidLen) {
       EEPROM.write(WIFI_SSID_OFFSET + i, ssid[i]);
     } else {
@@ -174,7 +124,7 @@ void saveWiFiConfig(const char* ssid, const char* password) {
   }
   
   // Write password directly
-  for (int i = 0; i < 64; i++) {
+  for (size_t i = 0; i < 64; i++) {
     if (i < passLen) {
       EEPROM.write(WIFI_PASS_OFFSET + i, password[i]);
     } else {
@@ -209,7 +159,7 @@ void saveWiFiConfig(const char* ssid, const char* password) {
   
   // Read back a few bytes to verify
   Serial.println("First 8 bytes of saved SSID (hex):");
-  for (int i = 0; i < 8; i++) {
+  for (size_t i = 0; i < 8; i++) {
     Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i));
   }
   Serial.println();
@@ -220,6 +170,19 @@ void saveWiFiConfig(const char* ssid, const char* password) {
 
 // Connect to WiFi using saved credentials
 void connectToWifi() {
+  // Clean WiFi state and prepare for connection
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
+  WiFi.mode(WIFI_STA);
+  
+  // Apply optimal settings for faster connection
+  wifi_set_sleep_type(NONE_SLEEP_T);
+  WiFi.setAutoReconnect(true);
+  
+  // Display connecting message
+  drawConnectingScreen("Connecting to WiFi", "");
+  
   // Load WiFi configuration
   bool configured = loadWiFiConfig();
   
@@ -229,98 +192,59 @@ void connectToWifi() {
     return;
   }
   
-  // Display connecting message
-  drawConnectingScreen("Connecting to WiFi", "");
+  Serial.println("Waiting for connection...");
   
-  Serial.println("\n============ CONNECTING TO WIFI ============");
+  // Fast connection attempt - 10 second timeout
+  unsigned long startAttempt = millis();
+  int dotCount = 0;
+  bool connected = false;
   
-  // Stop any existing server before changing modes
-  server.stop();
-  
-  // Set STA mode explicitly
-  WiFi.mode(WIFI_STA);
-  
-  // Wait up to 30 seconds for connection (increased from 20)
-  int timeout = 0;
-  while (WiFi.status() != WL_CONNECTED && timeout < 60) {
-    delay(500);
-    Serial.print(".");
-    timeout++;
+  while (millis() - startAttempt < 10000) { // 10 second timeout
+    if (WiFi.status() == WL_CONNECTED) {
+      connected = true;
+      break;
+    }
     
-    // Update the connection progress on display
-    if (timeout % 2 == 0) {
+    // Update dots every 250ms for visual feedback
+    if (millis() % 250 < 50) {
+      dotCount = (dotCount + 1) % 4;
       String dots = "";
-      for (int i = 0; i < (timeout / 2) % 4; i++) {
+      for (size_t i = 0; i < dotCount; i++) {
         dots += ".";
       }
       drawConnectingScreen("Connecting to WiFi", dots);
-      
-      // Every 10 seconds, show status code for debugging
-      if (timeout % 20 == 0) {
-        int status = WiFi.status();
-        Serial.println();
-        Serial.print("Current WiFi status: ");
-        Serial.print(status);
-        Serial.print(" (");
-        switch (status) {
-          case WL_IDLE_STATUS: Serial.print("IDLE"); break;
-          case WL_NO_SSID_AVAIL: Serial.print("NO_SSID_AVAIL"); break;
-          case WL_SCAN_COMPLETED: Serial.print("SCAN_COMPLETED"); break;
-          case WL_CONNECTED: Serial.print("CONNECTED"); break;
-          case WL_CONNECT_FAILED: Serial.print("CONNECT_FAILED"); break;
-          case WL_CONNECTION_LOST: Serial.print("CONNECTION_LOST"); break;
-          case WL_DISCONNECTED: Serial.print("DISCONNECTED"); break;
-          default: Serial.print("UNKNOWN"); break;
-        }
-        Serial.println(")");
-        
-        // Show status on display
-        drawConnectingScreen("WiFi Status:", String(status) + " - " + (status == WL_DISCONNECTED ? "DISCONNECTED" : 
-                                               status == WL_NO_SSID_AVAIL ? "NO SSID" : 
-                                               status == WL_CONNECT_FAILED ? "FAILED" : "TRYING"));
-        delay(1000); // Show for a second
-      }
     }
+    
+    delay(50); // Short delay to prevent watchdog triggering
   }
   
   // If connected successfully
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("");
-    Serial.println("WiFi connected successfully!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-    
-    // Enhanced debugging for web server
-    Serial.println("Starting web server on connected WiFi");
-    setupWebServer();
-    server.begin();
-    Serial.println("Web server started at http://" + WiFi.localIP().toString());
+  if (connected) {
+    Serial.println("\nWiFi connected successfully!");
+    Serial.printf("IP address: %s\n", WiFi.localIP().toString().c_str());
     
     // Show successful connection on display
     drawConnectingScreen("Connected!", "IP: " + WiFi.localIP().toString());
-    delay(2000);
+    delay(500);
+    
+    // Start web server
+    server.stop(); // Stop any existing server
+    setupWebServer();
+    server.begin();
   } else {
-    Serial.println("");
-    Serial.println("Failed to connect to WiFi");
-    Serial.println("WiFi status code: " + String(WiFi.status()));
-    Serial.println("Status meanings: 0=IDLE, 1=NO_SSID_AVAIL, 2=SCAN_COMPLETED, 3=CONNECTED");
-    Serial.println("                 4=CONNECT_FAILED, 5=CONNECTION_LOST, 6=DISCONNECTED");
-    
-    // Show connection failure on display
-    drawConnectingScreen("Connection failed!", "Status: " + String(WiFi.status()));
-    delay(3000);
-    
-    Serial.println("Starting configuration portal due to connection failure");
-    
-    // Start configuration portal if connection fails
+    Serial.println("\nConnection timed out, starting portal");
+    drawConnectingScreen("Connection failed", "Starting portal...");
+    delay(500);
     startConfigPortal();
   }
 }
 
 // Start the configuration portal (AP mode)
 void startConfigPortal() {
-  // Stop any existing server before changing modes
-  server.stop();
+  // Ensure we're disconnected from any STA mode connection
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
   
   // Set AP mode
   WiFi.mode(WIFI_AP);
@@ -330,17 +254,14 @@ void startConfigPortal() {
   // Configure DNS server to redirect all domains to AP IP
   dnsServer.start(DNS_PORT, "*", apIP);
   
-  // Start web server
+  // Stop any existing server and start web server
+  server.stop();
   setupWebServer();
   server.begin();
   
   Serial.println("Configuration Portal Started");
-  Serial.print("SSID: ");
-  Serial.println(AP_NAME);
-  Serial.print("Password: ");
-  Serial.println(AP_PASSWORD);
-  Serial.print("IP address: ");
-  Serial.println(apIP);
+  Serial.printf("SSID: %s, Password: %s\n", AP_NAME, AP_PASSWORD);
+  Serial.printf("IP address: %s\n", apIP.toString().c_str());
   
   // Show configuration mode on display
   drawConfigMode();
@@ -415,17 +336,17 @@ void handleSave() {
     
     // Debug output
     Serial.println("Saving WiFi configuration:");
-    Serial.print("SSID: '");
-    Serial.print(ssid);
-    Serial.println("'");
-    Serial.print("Password length: ");
-    Serial.println(password.length());
+    Serial.printf("SSID: '%s', Password length: %d\n", ssid.c_str(), password.length());
+    
+    // Show saving on display
+    drawConnectingScreen("Saving credentials", "Please wait...");
     
     // Save WiFi configuration
     saveWiFiConfig(ssid.c_str(), password.c_str());
     
+    // Send success page to client
     String html = FPSTR(HTML_HEADER);
-    html.replace("</head>", "<meta http-equiv='refresh' content='10;url=/'></head>");
+    html.replace("</head>", "<meta http-equiv='refresh' content='5;url=/'></head>");
     
     String successHtml = FPSTR(WIFI_SAVE_SUCCESS_HTML);
     successHtml.replace("%SSID%", ssid);
@@ -434,55 +355,58 @@ void handleSave() {
     html += successHtml;
     server.send(200, "text/html", html);
     
-    delay(1000);
+    // Wait a moment to ensure page is sent
+    delay(500);
     
-    // Clear any existing connections
+    // Prepare for connection attempt
+    WiFi.softAPdisconnect(true);
     WiFi.disconnect(true);
-    delay(1000);
+    WiFi.mode(WIFI_OFF);
+    delay(500);
     
-    // Stop the server before changing modes
-    server.stop();
-    
-    // Try a simple direct connection first
-    Serial.println("Attempting direct connection with new credentials");
+    // Connect with new credentials
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), password.c_str());
     
-    drawConnectingScreen("Connecting to WiFi", "");
+    // Display connecting screen
+    drawConnectingScreen("Connecting", "with new credentials");
     
-    int directTimeout = 0;
-    while (WiFi.status() != WL_CONNECTED && directTimeout < 20) {
-      delay(500);
-      Serial.print(".");
-      directTimeout++;
-      
-      if (directTimeout % 2 == 0) {
-        String dots = "";
-        for (int i = 0; i < (directTimeout / 2) % 4; i++) {
-          dots += ".";
-        }
-        drawConnectingScreen("Connecting to WiFi", dots);
+    // Quick connection attempt - 8 second timeout
+    unsigned long startAttempt = millis();
+    bool connected = false;
+    
+    while (millis() - startAttempt < 8000) {
+      if (WiFi.status() == WL_CONNECTED) {
+        connected = true;
+        break;
       }
+      
+      // Visual feedback
+      if ((millis() - startAttempt) % 500 < 50) {
+        int dots = ((millis() - startAttempt) / 500) % 4;
+        String dotStr = "";
+        for (size_t i = 0; i < dots; i++) dotStr += ".";
+        drawConnectingScreen("Connecting", dotStr);
+      }
+      
+      delay(50);
     }
     
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("\nDirect connection successful!");
-      Serial.print("IP: ");
-      Serial.println(WiFi.localIP());
+    if (connected) {
+      Serial.println("Connected successfully with new credentials!");
+      Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
       
-      // Restart the web server in STA mode
+      // Show connection success
+      drawConnectingScreen("Connected!", "IP: " + WiFi.localIP().toString());
+      delay(1000);
+      
+      // Restart web server in STA mode
+      server.stop();
       setupWebServer();
       server.begin();
-      Serial.println("Web server restarted at http://" + WiFi.localIP().toString());
-      
-      // Show connected info on display
-      drawConnectingScreen("Connected!", "IP: " + WiFi.localIP().toString());
-      delay(3000);
     } else {
-      Serial.println("\nDirect connection failed, trying normal connection process");
-      Serial.println("WiFi status code: " + String(WiFi.status()));
-      // Fall back to normal connect process with saved credentials
-      connectToWifi();
+      Serial.println("Failed to connect with new credentials");
+      // Restart in AP mode - we'll let the main loop handle this
     }
   } else {
     server.send(400, "text/plain", "Missing SSID or password");

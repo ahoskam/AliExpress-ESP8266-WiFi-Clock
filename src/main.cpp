@@ -136,109 +136,133 @@ void setup() {
 }
 
 void loop() {
-  // Handle DNS requests
-  dnsServer.processNextRequest();
+  // Get current WiFi mode
+  WiFiMode_t currentMode = WiFi.getMode();
+  
+  // Handle DNS requests if in AP mode
+  if (currentMode == WIFI_AP || currentMode == WIFI_AP_STA) {
+    dnsServer.processNextRequest();
+  }
   
   // Handle web server requests
   server.handleClient();
   
   // Keep LED off (some operations might turn it on)
-  static unsigned long lastLedCheck = 0;
-  if (millis() - lastLedCheck >= 1000) { // Check every second
-    digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED
-    lastLedCheck = millis();
-  }
+  digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED
   
-  // If in AP mode, keep showing the configuration screen
-  if (WiFi.getMode() == WIFI_AP) {
-    // Refresh the configuration screen periodically
+  // AP mode - show configuration portal
+  if (currentMode == WIFI_AP) {
     static unsigned long lastRefresh = 0;
     if (millis() - lastRefresh >= 5000) {
       drawConfigMode();
       lastRefresh = millis();
     }
+    delay(10);
     return;
   }
   
-  // Check WiFi connection status periodically
-  static unsigned long lastWifiCheck = 0;
-  static bool webServerChecked = false;
+  // STA mode - handle normal operation
   
-  if (millis() - lastWifiCheck >= 30000) { // Check every 30 seconds
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WARNING: WiFi connection lost, attempting to reconnect");
-      // Try a quick reconnect first
-      int reconnectAttempts = 0;
-      while (WiFi.status() != WL_CONNECTED && reconnectAttempts < 6) {
-        drawConnectingScreen("Connection lost", "Reconnecting...");
-        delay(1000);
-        reconnectAttempts++;
+  // Check WiFi connection status periodically (every 30 seconds)
+  static unsigned long lastWifiCheck = 0;
+  static unsigned long lastTimeUpdate = 0;
+  static bool initialSetupDone = false;
+  
+  // If we're connected, perform regular operations
+  if (WiFi.status() == WL_CONNECTED) {
+    
+    // First-time setup after connection
+    if (!initialSetupDone) {
+      Serial.println("Connection established - performing initial setup");
+      
+      // Setup NTP
+      drawConnectingScreen("Setting up", "NTP time sync");
+      setupNTP();
+      
+      // Get time
+      drawConnectingScreen("Updating", "time & date");
+      updateTimeAndDate();
+      lastTimeUpdate = millis();
+      
+      // Get weather
+      drawConnectingScreen("Fetching", "weather data");
+      fetchWeatherData();
+      
+      initialSetupDone = true;
+    }
+    
+    // Clock updates
+    updateCurrentTime();
+    
+    // Periodic NTP time update every hour
+    if (millis() - lastTimeUpdate >= 60 * 60 * 1000) {
+      updateTimeAndDate();
+      lastTimeUpdate = millis();
+    }
+    
+    // Weather update when needed
+    if (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL) {
+      fetchWeatherData();
+    }
+    
+    // Periodic WiFi check
+    if (millis() - lastWifiCheck >= 30000) {
+      // Just update the timestamp - connection is good
+      lastWifiCheck = millis();
+    }
+  }
+  // Not connected - try to reconnect
+  else {
+    // Only attempt reconnection every 30 seconds
+    if (millis() - lastWifiCheck >= 30000) {
+      lastWifiCheck = millis();
+      
+      Serial.println("WiFi disconnected - attempting reconnection");
+      initialSetupDone = false;
+      
+      // Try to reconnect
+      drawConnectingScreen("Reconnecting", "to WiFi");
+      
+      // Simple reconnect approach
+      WiFi.reconnect();
+      
+      // Give it 5 seconds to quickly reconnect
+      unsigned long reconnectStart = millis();
+      while (millis() - reconnectStart < 5000) {
+        if (WiFi.status() == WL_CONNECTED) {
+          Serial.println("Quick reconnection successful");
+          break;
+        }
+        delay(100);
       }
       
-      // If still not connected, try full reconnect
+      // If still not connected, do a full reconnect
       if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Reconnection failed, trying full reconnect");
-        webServerChecked = false; // Reset flag to check web server again after reconnect
-        connectToWifi();
+        connectToWifi(); // This handles portal startup if needed
       }
-    } else if (!webServerChecked) {
-      // Ensure web server is running in STA mode (only once after connection)
-      Serial.println("Ensuring web server is running in STA mode");
-      server.stop();
-      delay(500);
-      setupWebServer();
-      server.begin();
-      Serial.println("Web server restarted at http://" + WiFi.localIP().toString());
-      webServerChecked = true;
-    }
-    lastWifiCheck = millis();
-  }
-  
-  // Update the internal clock
-  updateCurrentTime();
-  
-  // Check if WiFi is connected and time not initialized
-  if (WiFi.status() == WL_CONNECTED && !timeInitialized) {
-    updateTimeAndDate();
-  }
-  
-  // Update time from NTP every hour
-  static unsigned long lastTimeUpdate = 0;
-  if (millis() - lastTimeUpdate >= 60 * 60 * 1000) { // 1 hour
-    updateTimeAndDate();
-    lastTimeUpdate = millis();
-  }
-  
-  // Update weather data periodically
-  if (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL) {
-    Serial.println("Time to update weather data");
-    if (fetchWeatherData()) {
-      Serial.println("Weather data updated successfully");
-    } else {
-      Serial.println("Failed to update weather data");
     }
   }
+  
+  // Display update (regardless of connection status)
   
   // Check if it's time to switch screens
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastScreenChange >= SCREEN_SWITCH_INTERVAL) {
+  static unsigned long lastScreenChange = 0;
+  if (millis() - lastScreenChange >= SCREEN_SWITCH_INTERVAL) {
     showTimeScreen = !showTimeScreen;
-    lastScreenChange = currentMillis;
+    lastScreenChange = millis();
   }
   
   // Update display
   u8g2.clearBuffer();
   
-  // Draw the appropriate screen
   if (showTimeScreen) {
     drawTimeScreen();
   } else {
     drawWeatherScreen();
   }
   
-  // Send buffer to display
   u8g2.sendBuffer();
   
-  // Short delay to prevent too frequent updates
-  delay(100);
+  // Short delay
+  delay(50);
 }
