@@ -43,9 +43,9 @@ void setup() {
   delay(1000);
   
   // FOR TESTING: UNCOMMENT THE NEXT LINE TO COMPLETELY RESET WIFI CREDENTIALS
-  formatCredentials();  // Temporarily uncomment this line to reset all credentials
-  Serial.println("!!! CREDENTIALS HAVE BEEN WIPED - WILL ENTER CONFIG MODE !!!");
-  delay(2000);
+  //formatCredentials();  // Temporarily uncomment this line to reset all credentials
+  //Serial.println("!!! CREDENTIALS HAVE BEEN WIPED - WILL ENTER CONFIG MODE !!!");
+  //delay(2000);
   
   // Initialize EEPROM
   EEPROM.begin(EEPROM_SIZE);
