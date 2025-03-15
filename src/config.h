@@ -36,9 +36,6 @@ extern const char* AP_PASSWORD;
 extern const byte DNS_PORT;
 extern IPAddress apIP;
 
-// Encryption key for WiFi credentials
-extern const char* ENCRYPTION_KEY;
-
 // Display instance
 extern U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2;
 

@@ -9,14 +9,13 @@
 #include <Arduino.h>
 #include "config.h"
 
-// XOR encryption/decryption function
-void encryptDecrypt(char* data, size_t length, const char* key);
-
 // WiFi configuration functions
 bool loadWiFiConfig();
 void saveWiFiConfig(const char* ssid, const char* password);
 void connectToWifi();
 void startConfigPortal();
+void formatCredentials(); // Format WiFi credentials area in EEPROM
+void dumpEEPROMContents();
 
 // Web server routes
 void setupWebServer();

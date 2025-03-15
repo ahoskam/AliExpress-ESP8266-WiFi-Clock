@@ -10,9 +10,6 @@ const char* AP_PASSWORD = "weatherconfig";  // Password for the AP
 const byte DNS_PORT = 53;  // DNS server port
 IPAddress apIP(192, 168, 4, 1);  // IP address for AP mode
 
-// Encryption key for WiFi credentials
-const char* ENCRYPTION_KEY = "ESP01Weather2025SecretKey";
-
 // Display instance
 U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R2, SCL_PIN, SDA_PIN, U8X8_PIN_NONE);
 

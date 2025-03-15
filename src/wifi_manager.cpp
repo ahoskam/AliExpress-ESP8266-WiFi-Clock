@@ -1,16 +1,20 @@
 /*
- * Implementation of WiFi Manager functions (without encryption)
+ * Implementation of WiFi Manager functions
  */
 
 #include "wifi_manager.h"
 #include "html_content.h"
 #include "time_manager.h"
+#include <ESP8266WiFi.h>  // Add direct include for WiFi definitions
 #include <EEPROM.h>
 #include <cstring>
 
 // Load WiFi configuration from EEPROM
 bool loadWiFiConfig() {
   Serial.println("\n\n============ LOADING WIFI CONFIG ============");
+  
+  // Dump EEPROM contents for debugging
+  dumpEEPROMContents();
   
   EEPROM.begin(EEPROM_SIZE);
   
@@ -30,34 +34,65 @@ bool loadWiFiConfig() {
   uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
   uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
   
-  // Read SSID and password directly (no encryption)
-  char ssid[32] = {0};
-  char password[64] = {0};
+  Serial.printf("Read SSID length: %d, Pass length: %d\n", ssidLen, passLen);
+  
+  // More lenient length validation (allow minimum 1 character SSID)
+  if (ssidLen < 1 || ssidLen > 32 || passLen > 64) {
+    Serial.println("ERROR: Invalid credential lengths in EEPROM");
+    Serial.printf("SSID length: %d (should be 1-32), Pass length: %d (should be 0-64)\n", ssidLen, passLen);
+    
+    // Raw dump of EEPROM data for debugging
+    Serial.println("First 10 bytes of SSID area:");
+    for (int i = 0; i < 10; i++) {
+      Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i));
+    }
+    Serial.println();
+    
+    drawConnectingScreen("Invalid Config", "Bad Data Format");
+    delay(2000);
+    EEPROM.end();
+    return false;
+  }
+  
+  // Read SSID and password from EEPROM
+  char ssid[33] = {0};  // One extra byte for null terminator
+  char password[65] = {0};  // One extra byte for null terminator
   
   // Read the SSID
-  for (size_t i = 0; i < 32; i++) {
+  for (size_t i = 0; i < ssidLen; i++) {
     ssid[i] = EEPROM.read(WIFI_SSID_OFFSET + i);
   }
+  ssid[ssidLen] = '\0'; // Ensure null termination
   
   // Read the password
-  for (size_t i = 0; i < 64; i++) {
+  for (size_t i = 0; i < passLen; i++) {
     password[i] = EEPROM.read(WIFI_PASS_OFFSET + i);
   }
+  password[passLen] = '\0'; // Ensure null termination
   
   EEPROM.end();
   
-  // Ensure proper null termination using the stored lengths
-  if (ssidLen > 0 && ssidLen < 32) {
-    ssid[ssidLen] = '\0';
+  // Validate SSID is not empty
+  if (strlen(ssid) == 0) {
+    Serial.println("ERROR: Empty SSID found, returning to setup mode");
+    drawConnectingScreen("Credential Error", "SSID is empty");
+    delay(2000);
+    return false;
   }
   
-  if (passLen > 0 && passLen < 64) {
-    password[passLen] = '\0';
+  // Check if SSID contains non-printable characters
+  bool validSsid = true;
+  for (size_t i = 0; i < strlen(ssid); i++) {
+    if (!isprint(ssid[i])) {
+      validSsid = false;
+      Serial.printf("Non-printable character at position %d: 0x%02X\n", i, (uint8_t)ssid[i]);
+    }
   }
   
-  // Make sure we have valid credentials
-  if (strlen(ssid) == 0 || !isprint(ssid[0])) {
-    Serial.println("ERROR: No valid SSID found, returning to setup mode");
+  if (!validSsid) {
+    Serial.println("ERROR: SSID contains non-printable characters, returning to setup mode");
+    drawConnectingScreen("Invalid SSID", "Contains invalid chars");
+    delay(2000);
     return false;
   }
   
@@ -66,19 +101,46 @@ bool loadWiFiConfig() {
   Serial.printf("Will attempt to connect to SSID: '%s'\n", ssid);
   Serial.printf("With password of length: %d\n", strlen(password));
   
+  // Print SSID bytes for debugging
+  Serial.print("SSID bytes (hex): ");
+  for (size_t i = 0; i < strlen(ssid); i++) {
+    Serial.printf("%02X ", (byte)ssid[i]);
+  }
+  Serial.println();
+  
+  // Short delay to ensure WiFi hardware is ready
+  delay(500);
+  
   // Store credentials in WiFi
   WiFi.begin(ssid, password);
   
   return true;
 }
 
-// Save WiFi configuration to EEPROM without encryption
+// Save WiFi configuration to EEPROM (simple, reliable approach)
 void saveWiFiConfig(const char* ssid, const char* password) {
   Serial.println("\n\n============ SAVING WIFI CONFIG ============");
+  
+  // Validate input
+  if (ssid == nullptr || password == nullptr) {
+    Serial.println("ERROR: Null credentials provided to saveWiFiConfig");
+    return;
+  }
   
   // Store original credentials length for debugging
   size_t ssidLen = strlen(ssid);
   size_t passLen = strlen(password);
+  
+  // Validate lengths
+  if (ssidLen == 0 || ssidLen > 32) {
+    Serial.println("ERROR: Invalid SSID length");
+    return;
+  }
+  
+  if (passLen > 64) {
+    Serial.println("ERROR: Password too long");
+    return;
+  }
   
   // Debug output
   Serial.println("Saving WiFi configuration to EEPROM:");
@@ -91,8 +153,8 @@ void saveWiFiConfig(const char* ssid, const char* password) {
   Serial.println(passLen);
   
   // Store these lengths for later retrieval
-  uint8_t ssidLenByte = (uint8_t)min(ssidLen, (size_t)255);
-  uint8_t passLenByte = (uint8_t)min(passLen, (size_t)255);
+  uint8_t ssidLenByte = (uint8_t)ssidLen;
+  uint8_t passLenByte = (uint8_t)passLen;
   
   // Debug output of SSID bytes (hex values)
   Serial.print("SSID bytes (hex): ");
@@ -105,32 +167,40 @@ void saveWiFiConfig(const char* ssid, const char* password) {
   drawConnectingScreen("Saving credentials", "SSID: " + String(ssid));
   delay(1000);
   
+  // First reset EEPROM to ensure clean state
   EEPROM.begin(EEPROM_SIZE);
+  
+  // Clear the entire WiFi credential region first (reset to zeros)
+  Serial.println("Clearing credential area first...");
+  for (int i = WIFI_SSID_OFFSET - 1; i < WIFI_PASS_OFFSET + 64; i++) {
+    EEPROM.write(i, 0);
+  }
+  
+  // Commit the cleared state
+  EEPROM.commit();
+  Serial.println("Credential area cleared");
+  
+  // Now start the real write process
+  
+  // Temporarily reset the config flag during write
+  EEPROM.write(CONFIG_FLAG_OFFSET, 0);
   
   // Save credential lengths first
   EEPROM.write(WIFI_SSID_OFFSET - 1, ssidLenByte);
   EEPROM.write(WIFI_PASS_OFFSET - 1, passLenByte);
   
-  // Save configuration flag first
-  EEPROM.write(CONFIG_FLAG_OFFSET, 1);
-  
   // Write SSID directly
-  for (size_t i = 0; i < 32; i++) {
-    if (i < ssidLen) {
-      EEPROM.write(WIFI_SSID_OFFSET + i, ssid[i]);
-    } else {
-      EEPROM.write(WIFI_SSID_OFFSET + i, 0);
-    }
+  for (size_t i = 0; i < ssidLen; i++) {
+    EEPROM.write(WIFI_SSID_OFFSET + i, ssid[i]);
   }
   
   // Write password directly
-  for (size_t i = 0; i < 64; i++) {
-    if (i < passLen) {
-      EEPROM.write(WIFI_PASS_OFFSET + i, password[i]);
-    } else {
-      EEPROM.write(WIFI_PASS_OFFSET + i, 0);
-    }
+  for (size_t i = 0; i < passLen; i++) {
+    EEPROM.write(WIFI_PASS_OFFSET + i, password[i]);
   }
+  
+  // Now set the config flag to indicate valid data
+  EEPROM.write(CONFIG_FLAG_OFFSET, 1);  
   
   // Make sure all writes complete
   if (EEPROM.commit()) {
@@ -144,37 +214,20 @@ void saveWiFiConfig(const char* ssid, const char* password) {
   
   // Verify the data was written correctly by reading it back
   Serial.println("Verifying saved data...");
-  EEPROM.begin(EEPROM_SIZE);
-  
-  // Check config flag
-  bool configFlag = EEPROM.read(CONFIG_FLAG_OFFSET) == 1;
-  Serial.print("Config flag after save: ");
-  Serial.println(configFlag ? "SET (1)" : "NOT SET (0)");
-  
-  // Check saved lengths
-  uint8_t savedSsidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
-  uint8_t savedPassLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
-  Serial.printf("Saved SSID length: %d (should be %d)\n", savedSsidLen, ssidLen);
-  Serial.printf("Saved password length: %d (should be %d)\n", savedPassLen, passLen);
-  
-  // Read back a few bytes to verify
-  Serial.println("First 8 bytes of saved SSID (hex):");
-  for (size_t i = 0; i < 8; i++) {
-    Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i));
-  }
-  Serial.println();
-  
-  EEPROM.end();
-  delay(1000);
+  dumpEEPROMContents();  // Dump EEPROM contents to verify
 }
 
 // Connect to WiFi using saved credentials
 void connectToWifi() {
   // Clean WiFi state and prepare for connection
+  Serial.println("Preparing WiFi hardware...");
+  WiFi.persistent(false);  // Prevent credentials from being written to flash
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  delay(100);
+  delay(200);  // Increased delay to ensure WiFi hardware resets
+  
   WiFi.mode(WIFI_STA);
+  delay(200);  // Give hardware time to switch modes
   
   // Apply optimal settings for faster connection
   wifi_set_sleep_type(NONE_SLEEP_T);
@@ -184,6 +237,7 @@ void connectToWifi() {
   drawConnectingScreen("Connecting to WiFi", "");
   
   // Load WiFi configuration
+  Serial.println("Loading credentials from EEPROM...");
   bool configured = loadWiFiConfig();
   
   if (!configured) {
@@ -192,30 +246,75 @@ void connectToWifi() {
     return;
   }
   
-  Serial.println("Waiting for connection...");
+  Serial.println("Attempting to connect...");
   
-  // Fast connection attempt - 10 second timeout
-  unsigned long startAttempt = millis();
-  int dotCount = 0;
+  // Connection attempt with multiple retries
+  const int MAX_RETRIES = 3;
+  const unsigned long ATTEMPT_TIMEOUT = 20000; // 20 seconds per attempt
   bool connected = false;
   
-  while (millis() - startAttempt < 10000) { // 10 second timeout
-    if (WiFi.status() == WL_CONNECTED) {
-      connected = true;
-      break;
-    }
-    
-    // Update dots every 250ms for visual feedback
-    if (millis() % 250 < 50) {
-      dotCount = (dotCount + 1) % 4;
-      String dots = "";
-      for (size_t i = 0; i < dotCount; i++) {
-        dots += ".";
+  for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      Serial.printf("\nRetry attempt %d of %d\n", attempt + 1, MAX_RETRIES);
+      drawConnectingScreen("Retrying connection", String(attempt + 1) + " of " + String(MAX_RETRIES));
+      delay(1000);
+      
+      // Reset WiFi connection for retry - with different approach for subsequent attempts
+      Serial.println("Resetting WiFi state for retry");
+      WiFi.disconnect(true);
+      delay(200);
+      
+      // For odd-numbered attempts, use saved credentials
+      // For even-numbered attempts, read from EEPROM again
+      // This gives us two different methods of retry
+      if (attempt % 2 == 0) {
+        WiFi.begin(); // Use stored credentials from previous attempt
+      } else {
+        loadWiFiConfig(); // Reload from EEPROM
       }
-      drawConnectingScreen("Connecting to WiFi", dots);
     }
     
-    delay(50); // Short delay to prevent watchdog triggering
+    unsigned long startAttempt = millis();
+    int dotCount = 0;
+    
+    while (millis() - startAttempt < ATTEMPT_TIMEOUT) {
+      // Check connection status
+      wl_status_t status = WiFi.status();
+      
+      if (status == WL_CONNECTED) {
+        connected = true;
+        break;
+      }
+      
+      // Display connection status for debugging
+      if ((millis() - startAttempt) % 2000 < 100) {
+        // Status code to string conversion directly inline
+        const char* statusStr = "UNKNOWN";
+        switch (status) {
+          case WL_CONNECTED: statusStr = "CONNECTED"; break;
+          case WL_NO_SHIELD: statusStr = "NO SHIELD"; break;
+          case WL_IDLE_STATUS: statusStr = "IDLE"; break;
+          case WL_NO_SSID_AVAIL: statusStr = "NO SSID AVAIL"; break;
+          case WL_SCAN_COMPLETED: statusStr = "SCAN COMPLETED"; break;
+          case WL_CONNECT_FAILED: statusStr = "CONNECT FAILED"; break;
+          case WL_CONNECTION_LOST: statusStr = "CONNECTION LOST"; break;
+          case WL_DISCONNECTED: statusStr = "DISCONNECTED"; break;
+        }
+        Serial.printf("Status: %d (%s)\n", status, statusStr);
+      }
+      
+      // Update dots every 250ms for visual feedback
+      if ((millis() - startAttempt) % 250 < 50) {
+        dotCount = (dotCount + 1) % 4;
+        String dots = "";
+        for (int i = 0; i < dotCount; i++) dots += ".";
+        drawConnectingScreen("Connecting to WiFi", dots);
+      }
+      
+      delay(100); // Slightly longer delay to prevent thrashing
+    }
+    
+    if (connected) break;
   }
   
   // If connected successfully
@@ -225,31 +324,70 @@ void connectToWifi() {
     
     // Show successful connection on display
     drawConnectingScreen("Connected!", "IP: " + WiFi.localIP().toString());
-    delay(500);
+    delay(1000);
     
     // Start web server
     server.stop(); // Stop any existing server
     setupWebServer();
     server.begin();
   } else {
-    Serial.println("\nConnection timed out, starting portal");
+    Serial.println("\nAll connection attempts failed, starting portal");
     drawConnectingScreen("Connection failed", "Starting portal...");
-    delay(500);
+    delay(1000);
     startConfigPortal();
   }
 }
 
+// Format/clear WiFi credentials in EEPROM 
+void formatCredentials() {
+  Serial.println("Formatting WiFi credentials in EEPROM...");
+  drawConnectingScreen("Formatting", "WiFi credentials");
+  
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Clear config flag first
+  EEPROM.write(CONFIG_FLAG_OFFSET, 0);
+  
+  // Clear SSID area
+  for (int i = WIFI_SSID_OFFSET - 1; i < WIFI_PASS_OFFSET - 1; i++) {
+    EEPROM.write(i, 0);
+  }
+  
+  // Clear password area
+  for (int i = WIFI_PASS_OFFSET - 1; i < WIFI_PASS_OFFSET + 64; i++) {
+    EEPROM.write(i, 0);
+  }
+  
+  // Commit changes
+  EEPROM.commit();
+  EEPROM.end();
+  
+  Serial.println("Credentials formatted successfully");
+  delay(1000);
+}
+
 // Start the configuration portal (AP mode)
 void startConfigPortal() {
+  // Dump current EEPROM contents before starting portal
+  dumpEEPROMContents();
+  
+  // No automatic formatting - credentials should persist across portal sessions
+  // formatCredentials();  // Removed automatic formatting
+  
+  Serial.println("Starting configuration portal WITHOUT formatting credentials");
+  
   // Ensure we're disconnected from any STA mode connection
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
   delay(100);
   
-  // Set AP mode
-  WiFi.mode(WIFI_AP);
+  // Set AP+STA mode instead of AP-only mode to better control when connections happen
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
   WiFi.softAP(AP_NAME, AP_PASSWORD);
+  
+  // Explicitly disconnect STA mode to ensure we don't automatically connect
+  WiFi.disconnect(true);
   
   // Configure DNS server to redirect all domains to AP IP
   dnsServer.start(DNS_PORT, "*", apIP);
@@ -356,40 +494,45 @@ void handleSave() {
     server.send(200, "text/html", html);
     
     // Wait a moment to ensure page is sent
-    delay(500);
+    delay(1000);
     
-    // Prepare for connection attempt
+    // Prepare for connection attempt with the new credentials
+    Serial.println("Shutting down AP and attempting to connect with new credentials");
+    
+    // Properly shut down AP mode
     WiFi.softAPdisconnect(true);
+    dnsServer.stop();
+    
+    // Clear all WiFi settings to ensure a clean state
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     delay(500);
     
-    // Connect with new credentials
+    // Start fresh with new credentials in STA mode
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), password.c_str());
     
     // Display connecting screen
     drawConnectingScreen("Connecting", "with new credentials");
     
-    // Quick connection attempt - 8 second timeout
+    // Connection attempt - 15 second timeout
     unsigned long startAttempt = millis();
     bool connected = false;
     
-    while (millis() - startAttempt < 8000) {
+    // More robust connection attempt with visual feedback
+    while (millis() - startAttempt < 15000) {
       if (WiFi.status() == WL_CONNECTED) {
         connected = true;
         break;
       }
       
       // Visual feedback
-      if ((millis() - startAttempt) % 500 < 50) {
-        int dots = ((millis() - startAttempt) / 500) % 4;
-        String dotStr = "";
-        for (size_t i = 0; i < dots; i++) dotStr += ".";
-        drawConnectingScreen("Connecting", dotStr);
-      }
+      int dots = ((millis() - startAttempt) / 500) % 4;
+      String dotStr = "";
+      for (int i = 0; i < dots; i++) dotStr += ".";
+      drawConnectingScreen("Connecting", dotStr);
       
-      delay(50);
+      delay(100);
     }
     
     if (connected) {
@@ -405,8 +548,12 @@ void handleSave() {
       setupWebServer();
       server.begin();
     } else {
-      Serial.println("Failed to connect with new credentials");
-      // Restart in AP mode - we'll let the main loop handle this
+      Serial.println("Failed to connect with new credentials, restarting device");
+      drawConnectingScreen("Connection failed", "Restarting device...");
+      delay(2000);
+      
+      // Force a complete restart as a last resort to get to a clean state
+      ESP.restart();
     }
   } else {
     server.send(400, "text/plain", "Missing SSID or password");
@@ -673,4 +820,50 @@ void drawConfigMode() {
   u8g2.drawStr(5, 62, "192.168.4.1");
   
   u8g2.sendBuffer();
+}
+
+// Dump EEPROM contents for debugging
+void dumpEEPROMContents() {
+  Serial.println("\n======= EEPROM CONTENTS DUMP =======");
+  
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Check config flag
+  uint8_t configFlag = EEPROM.read(CONFIG_FLAG_OFFSET);
+  Serial.printf("Config Flag (offset %d): %d\n", CONFIG_FLAG_OFFSET, configFlag);
+  
+  // Read SSID length
+  uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
+  Serial.printf("SSID Length (offset %d): %d\n", WIFI_SSID_OFFSET - 1, ssidLen);
+  
+  // Read password length
+  uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
+  Serial.printf("Password Length (offset %d): %d\n", WIFI_PASS_OFFSET - 1, passLen);
+  
+  // Dump SSID area (WIFI_SSID_OFFSET to WIFI_SSID_OFFSET+31)
+  Serial.println("SSID Data (hex):");
+  for (int i = 0; i < 32; i += 8) {
+    Serial.printf("%03d: ", WIFI_SSID_OFFSET + i);
+    for (int j = 0; j < 8 && i + j < 32; j++) {
+      Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i + j));
+    }
+    Serial.println();
+  }
+  
+  // Dump SSID as ASCII if length seems valid
+  if (ssidLen > 0 && ssidLen <= 32) {
+    Serial.print("SSID as text: '");
+    for (int i = 0; i < ssidLen; i++) {
+      char c = EEPROM.read(WIFI_SSID_OFFSET + i);
+      if (isprint(c)) {
+        Serial.print(c);
+      } else {
+        Serial.printf("\\x%02X", (uint8_t)c);
+      }
+    }
+    Serial.println("'");
+  }
+  
+  EEPROM.end();
+  Serial.println("====================================\n");
 }

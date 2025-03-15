@@ -11,6 +11,9 @@
 #include "weather.h"
 #include "display.h"
 
+// Forward declaration for format function
+//void formatCredentials();
+
 void setup() {
   // Initialize serial communication
   Serial.begin(115200);
@@ -19,11 +22,16 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED on most ESP8266 boards
   
-  // Add startup delay to see serial output
-  delay(2000);
+  // Add startup delay to see serial output and let hardware stabilize
+  delay(3000);
   
   Serial.println("\n\n====================================================");
   Serial.println("ESP-01 Weather & Time Display with WiFi Manager");
+  Serial.printf("SDK Version: %s\n", ESP.getSdkVersion());
+  Serial.printf("Core Version: %s\n", ESP.getCoreVersion().c_str());
+  Serial.printf("Reset Reason: %s\n", ESP.getResetReason().c_str());
+  Serial.printf("Flash Size: %d\n", ESP.getFlashChipRealSize());
+  Serial.printf("Free Heap: %d\n", ESP.getFreeHeap());
   Serial.println("====================================================");
   
   // Initialize display
@@ -34,6 +42,11 @@ void setup() {
   drawConnectingScreen("Starting up...", "Initializing");
   delay(1000);
   
+  // FOR TESTING: UNCOMMENT THE NEXT LINE TO COMPLETELY RESET WIFI CREDENTIALS
+  formatCredentials();  // Temporarily uncomment this line to reset all credentials
+  Serial.println("!!! CREDENTIALS HAVE BEEN WIPED - WILL ENTER CONFIG MODE !!!");
+  delay(2000);
+  
   // Initialize EEPROM
   EEPROM.begin(EEPROM_SIZE);
   
@@ -41,6 +54,21 @@ void setup() {
   bool isConfigured = (EEPROM.read(CONFIG_FLAG_OFFSET) == 1);
   Serial.print("EEPROM Config Flag: ");
   Serial.println(isConfigured ? "SET (1)" : "NOT SET (0)");
+  
+  if (isConfigured) {
+    // Read SSID length for debugging
+    uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
+    uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
+    Serial.printf("Stored SSID length: %d, Password length: %d\n", ssidLen, passLen);
+    
+    // Read first few bytes of SSID for debugging
+    Serial.print("First few bytes of SSID: ");
+    for (int i = 0; i < min(ssidLen, (uint8_t)8); i++) {
+      Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i));
+    }
+    Serial.println();
+  }
+  
   EEPROM.end();
   
   // Load saved settings for city/state
@@ -96,15 +124,6 @@ void setup() {
     delay(1000);
   }
   
-  // Clear the configuration flag for testing (REMOVE THIS IN PRODUCTION)
-  // Uncomment this line to reset the saved WiFi credentials
-  // EEPROM.begin(EEPROM_SIZE);
-  // EEPROM.write(CONFIG_FLAG_OFFSET, 0);
-  // EEPROM.commit();
-  // EEPROM.end();
-  // Serial.println("WARNING: Cleared WiFi credentials for testing");
-  // delay(2000);
-  
   // Display current credentials status
   if (isConfigured) {
     drawConnectingScreen("WiFi configuration", "found");
@@ -113,7 +132,8 @@ void setup() {
   }
   delay(1000);
   
-  // Try to connect to saved WiFi
+  // Try to connect to saved WiFi with more detailed output
+  Serial.println("Starting WiFi connection process...");
   connectToWifi();
   
   // Disable WiFi status LED again (WiFi connection might have enabled it)
@@ -121,6 +141,8 @@ void setup() {
   
   // After WiFi connection, setup NTP
   if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected successfully, setting up services");
+    
     // Setup NTP client
     drawConnectingScreen("Setting up", "NTP time sync");
     setupNTP();
@@ -132,12 +154,17 @@ void setup() {
     // Fetch weather data
     drawConnectingScreen("Fetching", "weather data");
     fetchWeatherData();
+  } else {
+    Serial.println("WiFi not connected after initialization");
   }
+  
+  Serial.println("Setup complete");
 }
 
 void loop() {
   // Get current WiFi mode
   WiFiMode_t currentMode = WiFi.getMode();
+  bool isAPActive = (currentMode == WIFI_AP || currentMode == WIFI_AP_STA) && WiFi.softAPgetStationNum() > 0;
   
   // Handle DNS requests if in AP mode
   if (currentMode == WIFI_AP || currentMode == WIFI_AP_STA) {
@@ -150,8 +177,8 @@ void loop() {
   // Keep LED off (some operations might turn it on)
   digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED
   
-  // AP mode - show configuration portal
-  if (currentMode == WIFI_AP) {
+  // AP mode with active connections - focus on serving the portal
+  if (isAPActive) {
     static unsigned long lastRefresh = 0;
     if (millis() - lastRefresh >= 5000) {
       drawConfigMode();
@@ -161,7 +188,20 @@ void loop() {
     return;
   }
   
-  // STA mode - handle normal operation
+  // AP mode without connections OR STA+AP mode without active clients
+  if (currentMode == WIFI_AP || 
+     (currentMode == WIFI_AP_STA && WiFi.status() != WL_CONNECTED && !isAPActive)) {
+    // If we're in AP mode only (or AP+STA but not connected), periodically refresh the display
+    static unsigned long lastRefresh = 0;
+    if (millis() - lastRefresh >= 5000) {
+      drawConfigMode();
+      lastRefresh = millis();
+    }
+    delay(10);
+    return;
+  }
+  
+  // STA mode or AP+STA mode with active connection - handle normal operation
   
   // Check WiFi connection status periodically (every 30 seconds)
   static unsigned long lastWifiCheck = 0;
@@ -223,21 +263,32 @@ void loop() {
       // Try to reconnect
       drawConnectingScreen("Reconnecting", "to WiFi");
       
-      // Simple reconnect approach
+      // First try a simple reconnect
       WiFi.reconnect();
       
-      // Give it 5 seconds to quickly reconnect
+      // Give it 10 seconds to quickly reconnect
       unsigned long reconnectStart = millis();
-      while (millis() - reconnectStart < 5000) {
+      bool quickReconnected = false;
+      
+      while (millis() - reconnectStart < 10000) {
         if (WiFi.status() == WL_CONNECTED) {
           Serial.println("Quick reconnection successful");
+          quickReconnected = true;
           break;
+        }
+        // Visual feedback
+        if ((millis() - reconnectStart) % 250 < 50) {
+          String dots = String((millis() - reconnectStart) / 250 % 4, '.');
+          drawConnectingScreen("Reconnecting", dots);
         }
         delay(100);
       }
       
-      // If still not connected, do a full reconnect
-      if (WiFi.status() != WL_CONNECTED) {
+      // If quick reconnect failed, try a full reconnect
+      if (!quickReconnected) {
+        Serial.println("Quick reconnect failed, trying full reconnect");
+        drawConnectingScreen("Quick reconnect failed", "Trying full reconnect");
+        delay(1000);
         connectToWifi(); // This handles portal startup if needed
       }
     }
