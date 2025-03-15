@@ -44,13 +44,16 @@ This is an open-source project that provides alternative firmware for the ESP826
 Once connected to your WiFi network, you can access the device's settings page:
 
 1. Find the device's IP address (check your router's DHCP client list)
-2. Open a web browser and enter the IP address
+2. Open a web browser and navigate to `http://<device-ip-address>/settings` (Note: Must use `http://`, HTTPS is not supported)
 3. You'll see the main configuration page with the following options:
 
 ### Current Features
 
 - WiFi Configuration
   - Configure WiFi credentials
+
+- Time Settings
+  - Timezone selection from dropdown list
 
 - Weather Settings
   - Location settings
@@ -69,7 +72,6 @@ Once connected to your WiFi network, you can access the device's settings page:
 - Time Settings
   - [ ] Daylight saving time configuration
   - [ ] NTP server configuration
-  - [ ] Time zone selection improvements
 
 - System Features
   - [ ] Current connection status display
