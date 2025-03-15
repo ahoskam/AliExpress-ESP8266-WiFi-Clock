@@ -7,7 +7,6 @@ This is an open-source project that provides alternative firmware for the ESP826
 - Easy WiFi configuration through a web interface
 - Real-time clock synchronization using NTP
 - Weather display
-- Customizable display settings
 - Web-based configuration interface
 - Secure, open-source implementation
 
@@ -35,7 +34,7 @@ This is an open-source project that provides alternative firmware for the ESP826
 ## Initial Setup
 
 1. Power on your device
-2. The device will create a WiFi access point named "WiFi Clock Setup"
+2. The device will create a WiFi access point named "ESP_XXXXXX" (where XXXXXX is a unique identifier)
 3. Connect to this network using your phone or computer
 4. Open a web browser and navigate to `192.168.4.1`
 5. Follow the on-screen instructions to connect the device to your WiFi network
@@ -48,30 +47,37 @@ Once connected to your WiFi network, you can access the device's settings page:
 2. Open a web browser and enter the IP address
 3. You'll see the main configuration page with the following options:
 
-### Available Settings
+### Current Features
 
 - WiFi Configuration
-  - View current connection status
-  - Change WiFi credentials if needed
-  
-- Display Settings
-  - Brightness control
-  - Display orientation
-  - Time format (12/24 hour)
-  
+  - Configure WiFi credentials
+
 - Weather Settings
   - Location settings
   - Update frequency
-  - Temperature unit (°C/°F)
+
+### Planned Enhancements (TODOs)
+
+- Display Settings
+  - [ ] Brightness control (investigating hardware support)
+  - [ ] Display orientation options
+  - [ ] Time format selection (12/24 hour)
+  
+- Weather Settings
+  - [ ] Temperature unit toggle (°C/°F)
 
 - Time Settings
-  - Time zone selection
-  - NTP server configuration
-  - Daylight saving time options
+  - [ ] Daylight saving time configuration
+  - [ ] NTP server configuration
+  - [ ] Time zone selection improvements
+
+- System Features
+  - [ ] Current connection status display
+  - [ ] More customization options
 
 ## Contributing
 
-This is a hobby project aimed at providing an open-source alternative for these popular WiFi clock displays. Contributions are welcome! Please feel free to submit pull requests or open issues for any bugs or feature requests.
+This is a new hobby project aimed at providing an open-source alternative for these popular WiFi clock displays. The project is in its early stages and welcomes contributions! Please feel free to submit pull requests or open issues for any bugs or feature requests.
 
 ## Why Open Source?
 
@@ -98,4 +104,4 @@ If you encounter any issues or need help, please:
 
 ## Acknowledgments
 
-Thanks to all contributors and the open-source community for making this project possible. 
+Thanks to the open-source community for the libraries and tools that make this project possible. 
