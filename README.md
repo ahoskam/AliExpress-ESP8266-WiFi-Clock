@@ -63,6 +63,7 @@ Once connected to your WiFi network, you can access the device's settings page:
 
 - Time Settings
   - Timezone selection from dropdown list
+  - **New**: 12/24 hour format selection
 
 - Display Features
   - Three rotating screens:
@@ -80,7 +81,7 @@ Once connected to your WiFi network, you can access the device's settings page:
 - Display Settings
   - [ ] Brightness control (investigating hardware support)
   - [ ] Display orientation options
-  - [ ] Time format selection (12/24 hour)
+  - [x] Time format selection (12/24 hour)
   
 - Weather Settings
   - [ ] Temperature unit toggle (°C/°F)

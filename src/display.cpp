@@ -4,6 +4,7 @@
 
 #include "display.h"
 #include "weather.h"
+#include "time_manager.h"
 
 // Draw weather icon based on type
 void drawWeatherIcon(int x, int y, byte iconType, byte size) {
@@ -75,8 +76,8 @@ void drawExtraLargeWeatherIcon(int x, int y, byte iconType) {
 // Draw the time screen with sun position indicator
 void drawTimeScreen() {
   // Format time with leading zero if needed
-  char timeStr[6];
-  sprintf(timeStr, "%02d:%02d", hours, minutes);
+  char timeStr[10]; // Increased buffer size for 12-hour format with AM/PM
+  formatTimeString(timeStr, hours, minutes, use12HourFormat);
   
   // Format date with buffer size control
   char dateStr[32]; // Increased buffer size to 32 to ensure sufficient space

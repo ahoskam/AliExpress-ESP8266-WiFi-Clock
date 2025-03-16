@@ -242,6 +242,12 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
         <select id='timezone' name='timezone'>
         </select><br>
         
+        <label for='timeFormat'>Time Format:</label>
+        <select id='timeFormat' name='timeFormat'>
+          <option value='0' %24HOUR_SELECTED%>24-hour (e.g., 14:30)</option>
+          <option value='1' %12HOUR_SELECTED%>12-hour (e.g., 2:30 PM)</option>
+        </select><br>
+        
         <h2>Update Settings</h2>
         <label for='interval'>Weather Update Interval (minutes):</label>
         <select id='interval' name='interval'>
@@ -296,6 +302,7 @@ const char SETTINGS_SAVE_SUCCESS_HTML[] PROGMEM = R"rawliteral(
     <p>Your weather display settings have been updated.</p>
     <p>Location: %CITY%, %STATE%</p>
     <p>Timezone: %TIMEZONE_TEXT%</p>
+    <p>Time format: %TIME_FORMAT%</p>
     <p>Update interval: %INTERVAL% minutes</p>
     <p>API Key: %API_KEY_MASKED%</p>
     <p>Weather data will be updated with new settings.</p>

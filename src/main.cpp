@@ -245,17 +245,17 @@ void loop() {
     // Clock updates
     updateCurrentTime();
     
-    // Periodic NTP time update every 30 minutes
-    if (millis() - lastTimeUpdate >= 30 * 60 * 1000) {
+    // Periodic NTP time update every 10 minutes (reduced from 30 minutes for better accuracy)
+    if (millis() - lastTimeUpdate >= 10 * 60 * 1000) {
       Serial.println("[Time] Time update initiated...");
       bool timeUpdateSuccess = updateTimeAndDate();
       if (timeUpdateSuccess) {
         Serial.println("[Time] Time update successful");
         // Format time and date strings for display
-        char timeStr[9];
-        sprintf(timeStr, "%02d:%02d:%02d", hours, minutes, seconds);
+        char timeStr[16];
+        formatTimeString(timeStr, hours, minutes, use12HourFormat);
         
-        char dateStr[20];
+        char dateStr[32]; // Increased from 20 to 32 to prevent buffer overflow
         sprintf(dateStr, "%s %s %d, %d", dayOfWeekStr.c_str(), monthStr.c_str(), dayOfMonth, year);
         
         Serial.print("[Time] Current time: ");

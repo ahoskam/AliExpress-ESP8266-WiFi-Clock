@@ -558,6 +558,15 @@ void handleSettings() {
   }
   settingsHtml.replace("%TIMEZONE%", tzStr);
   
+  // Set time format selection
+  if (use12HourFormat) {
+    settingsHtml.replace("%12HOUR_SELECTED%", "selected");
+    settingsHtml.replace("%24HOUR_SELECTED%", "");
+  } else {
+    settingsHtml.replace("%12HOUR_SELECTED%", "");
+    settingsHtml.replace("%24HOUR_SELECTED%", "selected");
+  }
+  
   settingsHtml.replace("%API_KEY%", API_KEY);
   
   // Generate interval options
@@ -592,6 +601,7 @@ void handleSettingsSave() {
     unsigned long interval = server.arg("interval").toInt() * 60000; // Convert minutes to milliseconds
     float tz = server.arg("timezone").toFloat();
     String apiKey = server.hasArg("apikey") ? server.arg("apikey") : API_KEY;
+    bool is12Hour = server.hasArg("timeFormat") && server.arg("timeFormat") == "1";
     
     // Store the old API key to check if it changed
     String oldApiKey = API_KEY;
@@ -621,8 +631,12 @@ void handleSettingsSave() {
       Serial.println("Invalid API key provided, keeping current API key");
     }
     
-    // Save settings
-    saveSettings(city, state, interval, tz, apiKey);
+    // Log time format change
+    Serial.print("Time format: ");
+    Serial.println(is12Hour ? "12-hour" : "24-hour");
+    
+    // Save settings and update use12HourFormat
+    saveSettings(city, state, interval, tz, apiKey, is12Hour);
     
     // Get timezone text for display
     String timezoneText = getTimezoneText(tz);
@@ -635,6 +649,7 @@ void handleSettingsSave() {
     successHtml.replace("%STATE%", state);
     successHtml.replace("%INTERVAL%", String(interval / 60000));
     successHtml.replace("%TIMEZONE_TEXT%", timezoneText);
+    successHtml.replace("%TIME_FORMAT%", is12Hour ? "12-hour with AM/PM" : "24-hour");
     
     // Mask API key for security - show first 4 and last 4 characters
     String maskedApiKey;
@@ -721,6 +736,9 @@ void loadSettings() {
     if (apiKey[i] == 0) break;
   }
   
+  // Load time format preference
+  byte timeFormatValue = EEPROM.read(TIME_FORMAT_OFFSET);
+  
   EEPROM.end();
   
   // Convert bytes to values
@@ -751,15 +769,19 @@ void loadSettings() {
     API_KEY = String(apiKey);
   }
   
+  // Set time format preference (default to 24-hour if invalid)
+  use12HourFormat = (timeFormatValue == 1);
+  
   Serial.println("Settings loaded from EEPROM:");
   Serial.println("City: " + cityName);
   Serial.println("State: " + stateName);
   Serial.println("Update interval: " + String(WEATHER_UPDATE_INTERVAL / 60000) + " minutes");
   Serial.println("Timezone: " + String(timezone) + " (UTC" + (timezone >= 0 ? "+" : "") + String(timezone) + ")");
+  Serial.println("Time format: " + String(use12HourFormat ? "12-hour" : "24-hour"));
 }
 
 // Save settings to EEPROM
-void saveSettings(String city, String state, unsigned long updateInterval, float tz, String apiKey) {
+void saveSettings(String city, String state, unsigned long updateInterval, float tz, String apiKey, bool is12Hour) {
   EEPROM.begin(EEPROM_SIZE);
   
   // Save city name
@@ -803,6 +825,9 @@ void saveSettings(String city, String state, unsigned long updateInterval, float
     }
   }
   
+  // Save time format
+  EEPROM.write(TIME_FORMAT_OFFSET, is12Hour ? 1 : 0);
+  
   EEPROM.commit();
   EEPROM.end();
   
@@ -812,6 +837,7 @@ void saveSettings(String city, String state, unsigned long updateInterval, float
   WEATHER_UPDATE_INTERVAL = updateInterval;
   timezone = tz;
   API_KEY = apiKey;
+  use12HourFormat = is12Hour;
   
   Serial.println("Settings saved to EEPROM:");
   Serial.println("City: " + cityName);

@@ -32,6 +32,7 @@
 #define UPDATE_INTERVAL_OFFSET 200
 #define TIMEZONE_OFFSET 210
 #define API_KEY_OFFSET 220
+#define TIME_FORMAT_OFFSET 270  // New offset for time format preference
 
 // Configuration portal constants
 extern const char* AP_NAME;
@@ -87,6 +88,10 @@ extern bool timeInitialized;
 extern unsigned long lastTimeUpdate;
 extern unsigned long lastSecondUpdate;
 extern float timezone; // UTC offset in hours (e.g., -5 for EST)
+extern bool use12HourFormat; // true for 12-hour format with AM/PM, false for 24-hour format
+extern long driftCorrection; // Milliseconds of drift correction per hour
+extern unsigned long lastNtpTimestamp; // Last NTP time in seconds
+extern unsigned long lastNtpMillis; // millis() value at last NTP sync
 
 // Weather variables
 extern int currentTemp;

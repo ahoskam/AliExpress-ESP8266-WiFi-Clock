@@ -52,10 +52,83 @@ bool updateTimeAndDate() {
   
   Serial.println("[Time] Attempting to update time from NTP server...");
   
-  // Try to update time from NTP
+  // Try to update time from NTP with precise timing
   if (timeClient.update()) {
     // Get UTC time
     time_t utcTime = timeClient.getEpochTime();
+    int currentSecond = timeClient.getSeconds();
+    
+    Serial.print("[Time] NTP Response - Epoch: ");
+    Serial.print(utcTime);
+    Serial.print(", Current second: ");
+    Serial.println(currentSecond);
+    
+    // Implement precise synchronization
+    // Wait until the start of the next second
+    bool performPreciseSync = true;
+    int startSecond = currentSecond;
+    
+    // Only do this if we're not too close to a second boundary already
+    if (currentSecond < 58) { // Don't try if we're close to a minute boundary
+      Serial.println("[Time] Performing precise synchronization to second boundary");
+      
+      // Wait for the next second to start
+      while (timeClient.getSeconds() == startSecond) {
+        delay(10);
+      }
+      
+      // Now we're at the exact start of a new second
+      Serial.println("[Time] Precise synchronization complete");
+      lastSecondUpdate = millis(); // Update timestamp precisely at second boundary
+      
+      // Get new time after sync
+      utcTime = timeClient.getEpochTime();
+    } else {
+      performPreciseSync = false;
+      Serial.println("[Time] Skipping precise sync (too close to minute boundary)");
+    }
+    
+    // If we have a previous sync, calculate drift
+    if (lastNtpTimestamp > 0 && lastNtpMillis > 0) {
+      unsigned long expectedElapsedSeconds = utcTime - lastNtpTimestamp;
+      unsigned long actualElapsedMillis = millis() - lastNtpMillis;
+      
+      // Only calculate drift if reasonable time has passed (at least 5 minutes)
+      if (expectedElapsedSeconds > 300) {
+        // Convert expected seconds to milliseconds
+        unsigned long expectedElapsedMillis = expectedElapsedSeconds * 1000;
+        
+        // Calculate drift in milliseconds
+        long currentDrift = actualElapsedMillis - expectedElapsedMillis;
+        
+        // Convert to hourly drift rate (milliseconds per hour)
+        // 3600 seconds in an hour
+        float hoursElapsed = expectedElapsedSeconds / 3600.0;
+        if (hoursElapsed > 0) {
+          long driftPerHour = (long)(currentDrift / hoursElapsed);
+          
+          // Update the drift correction value with some smoothing
+          // Give more weight to the new measurement (75%) and less to the old one (25%)
+          driftCorrection = (driftPerHour * 3 + driftCorrection) / 4;
+          
+          Serial.print("[Time] Calculated drift: ");
+          Serial.print(currentDrift);
+          Serial.print(" ms over ");
+          Serial.print(hoursElapsed);
+          Serial.print(" hours (");
+          Serial.print(driftPerHour);
+          Serial.println(" ms/hour)");
+          
+          Serial.print("[Time] Updated drift correction: ");
+          Serial.print(driftCorrection);
+          Serial.println(" ms/hour");
+        }
+      }
+    }
+    
+    // Save current timestamp and millis for future drift calculation
+    lastNtpTimestamp = utcTime;
+    lastNtpMillis = millis();
     
     // Apply timezone offset (convert to seconds)
     time_t localTime = utcTime + (timezone * 3600);
@@ -89,6 +162,12 @@ bool updateTimeAndDate() {
     hours = ti->tm_hour;
     minutes = ti->tm_min;
     seconds = ti->tm_sec;
+    
+    // If we did precise sync, use the second value we know is accurate
+    if (performPreciseSync) {
+      seconds = timeClient.getSeconds();
+    }
+    
     dayOfMonth = ti->tm_mday;
     month = ti->tm_mon + 1; // tm_mon is 0-based
     year = ti->tm_year + 1900;
@@ -103,7 +182,10 @@ bool updateTimeAndDate() {
     currentHour = hours;
     
     timeInitialized = true;
-    lastSecondUpdate = millis();
+    // lastSecondUpdate is already set if we did precise sync
+    if (!performPreciseSync) {
+      lastSecondUpdate = millis();
+    }
     lastTimeUpdate = millis();
     
     // Print time information using separate print statements
@@ -140,20 +222,64 @@ bool updateTimeAndDate() {
 void updateCurrentTime() {
   if (!timeInitialized) return;
   
-  // Calculate how many seconds have passed
+  // Calculate how many seconds have passed, with drift correction
   unsigned long currentMillis = millis();
-  unsigned long elapsedMs = currentMillis - lastSecondUpdate;
+  unsigned long elapsedMs;
+  
+  // Handle millis() rollover (occurs approximately every 49.7 days)
+  if (currentMillis < lastSecondUpdate) {
+    // Rollover occurred
+    Serial.println("[Time] Detected millis() rollover");
+    // UINT_MAX is the maximum value for unsigned long (4,294,967,295)
+    elapsedMs = (UINT_MAX - lastSecondUpdate) + currentMillis + 1;
+    
+    // Also reset the lastNtpMillis to avoid drift calculation errors
+    if (lastNtpMillis > currentMillis) {
+      // Force an NTP update soon to resync
+      lastTimeUpdate = 0;
+    }
+  } else {
+    elapsedMs = currentMillis - lastSecondUpdate;
+  }
+  
+  // Calculate hours since last NTP sync
+  float hoursSinceSync;
+  
+  // Handle rollover for this calculation as well
+  if (currentMillis < lastNtpMillis) {
+    unsigned long millisSinceSync = (UINT_MAX - lastNtpMillis) + currentMillis + 1;
+    hoursSinceSync = millisSinceSync / 3600000.0;
+  } else {
+    hoursSinceSync = (currentMillis - lastNtpMillis) / 3600000.0;
+  }
+  
+  // Adjust elapsed time by removing the calculated drift
+  // If drift correction is positive (clock runs fast), we decrease the elapsed time
+  // If drift correction is negative (clock runs slow), we increase the elapsed time
+  long correctedElapsedMs = elapsedMs;
+  
+  // Only apply correction if we've had at least one successful NTP sync
+  if (lastNtpTimestamp > 0) {
+    // Apply the drift correction relative to the last second update
+    // We adjust the elapsed time since last second update, not the total drift since NTP sync
+    float hoursSinceLastSecond = elapsedMs / 3600000.0;
+    long correctionSinceLastSecond = (long)(driftCorrection * hoursSinceLastSecond);
+    correctedElapsedMs = elapsedMs - correctionSinceLastSecond;
+    
+    // Ensure we don't go backward in time due to correction
+    if (correctedElapsedMs < 0) correctedElapsedMs = 0;
+  }
   
   // Only update if at least one second has passed
-  if (elapsedMs >= 1000) {
+  if (correctedElapsedMs >= 1000) {
     // Calculate number of seconds that have elapsed
-    int secondsToAdd = elapsedMs / 1000;
+    int secondsToAdd = correctedElapsedMs / 1000;
+    
+    // Update the last second update time more precisely
+    lastSecondUpdate = currentMillis - (correctedElapsedMs % 1000);
     
     // Add the elapsed seconds
     seconds += secondsToAdd;
-    
-    // Update the last second update time more precisely
-    lastSecondUpdate = currentMillis - (elapsedMs % 1000);
     
     // Update minutes and hours as needed
     while (seconds >= 60) {
@@ -232,6 +358,20 @@ time_t getEpochTime() {
   time_t now;
   time(&now);
   return now;
+}
+
+// Format time string in either 12-hour or 24-hour format
+void formatTimeString(char* buffer, int hour, int minute, bool use12Hour) {
+  if (use12Hour) {
+    // 12-hour format with AM/PM
+    int hour12 = hour % 12;
+    if (hour12 == 0) hour12 = 12; // 0 hour should be displayed as 12 in 12-hour format
+    const char* ampm = (hour < 12) ? "AM" : "PM";
+    sprintf(buffer, "%2d:%02d %s", hour12, minute, ampm);
+  } else {
+    // 24-hour format
+    sprintf(buffer, "%02d:%02d", hour, minute);
+  }
 }
 
 // Reset time when timezone changes

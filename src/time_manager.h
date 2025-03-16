@@ -29,4 +29,7 @@ time_t getEpochTime();
 // Function to check if DST should be applied
 bool shouldApplyDST(const struct tm* timeinfo);
 
+// Function to format time in 12-hour format with AM/PM
+void formatTimeString(char* buffer, int hour, int minute, bool use12Hour);
+
 #endif // TIME_MANAGER_H
