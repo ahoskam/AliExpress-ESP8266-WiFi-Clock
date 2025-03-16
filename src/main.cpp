@@ -5,73 +5,71 @@
  */
 
 #include <Arduino.h>
-#include "config.h"
-#include "wifi_manager.h"
+#include <U8g2lib.h>
+#include <ESP8266WiFi.h>
+#include <EEPROM.h>
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include "config.h"  // Include the main configuration that has all necessary declarations
+#include "weather.h" // Include weather functions
+#include "wifi_manager.h" // Include WiFi manager functions
 #include "time_manager.h"
-#include "weather.h"
 #include "display.h"
 
-// Forward declaration for format function
-//void formatCredentials();
+// Define EEPROM test offset (not used in main program)
+#define TEST_OFFSET 0
 
 void setup() {
-  // Initialize serial communication
   Serial.begin(115200);
+  delay(1000);  // Give serial time to initialize
   
-  // Disable the blue LED on ESP8266
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED on most ESP8266 boards
+  Serial.println("Starting ESP Weather Display");
   
-  // Add startup delay to see serial output and let hardware stabilize
-  delay(3000);
-  
-  Serial.println("\n\n====================================================");
-  Serial.println("ESP-01 Weather & Time Display with WiFi Manager");
-  Serial.printf("SDK Version: %s\n", ESP.getSdkVersion());
-  Serial.printf("Core Version: %s\n", ESP.getCoreVersion().c_str());
-  Serial.printf("Reset Reason: %s\n", ESP.getResetReason().c_str());
-  Serial.printf("Flash Size: %d\n", ESP.getFlashChipRealSize());
-  Serial.printf("Free Heap: %d\n", ESP.getFreeHeap());
-  Serial.println("====================================================");
+  // Initialize EEPROM
+  EEPROM.begin(EEPROM_SIZE);
   
   // Initialize display
   u8g2.begin();
-  Serial.println("Display initialized");
+  u8g2.setFont(u8g2_font_6x10_tr);
+  
+  // Check if WiFi credentials exist
+  uint8_t configFlag = EEPROM.read(CONFIG_FLAG_OFFSET);
+  uint8_t ssidLen = EEPROM.read(CONFIG_FLAG_OFFSET + 1);
+  uint8_t passLen = EEPROM.read(CONFIG_FLAG_OFFSET + 2);
+  
+  if (configFlag != CONFIG_FLAG) {
+    Serial.println("No valid WiFi configuration found");
+    startConfigPortal();
+    return;
+  }
+  
+  // Try to connect with stored credentials
+  if (!loadWiFiConfig()) {
+    Serial.println("Failed to connect with stored credentials");
+    startConfigPortal();
+    return;
+  }
   
   // Show startup message
   drawConnectingScreen("Starting up...", "Initializing");
   delay(1000);
   
-  // FOR TESTING: UNCOMMENT THE NEXT LINE TO COMPLETELY RESET WIFI CREDENTIALS
-  //formatCredentials();  // Temporarily uncomment this line to reset all credentials
-  //Serial.println("!!! CREDENTIALS HAVE BEEN WIPED - WILL ENTER CONFIG MODE !!!");
-  //delay(2000);
+  // Debug EEPROM WiFi credentials storage
+  Serial.println("\n----- WiFi Credentials Debug -----");
+  Serial.println("Reading WiFi configuration...");
   
   // Initialize EEPROM
   EEPROM.begin(EEPROM_SIZE);
   
   // Debug info about EEPROM config
-  bool isConfigured = (EEPROM.read(CONFIG_FLAG_OFFSET) == 1);
+  bool isConfigured = (EEPROM.read(CONFIG_FLAG_OFFSET) == CONFIG_FLAG);
   Serial.print("EEPROM Config Flag: ");
   Serial.println(isConfigured ? "SET (1)" : "NOT SET (0)");
-  
-  if (isConfigured) {
-    // Read SSID length for debugging
-    uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
-    uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
-    Serial.printf("Stored SSID length: %d, Password length: %d\n", ssidLen, passLen);
-    
-    // Read first few bytes of SSID for debugging
-    Serial.print("First few bytes of SSID: ");
-    for (int i = 0; i < min(ssidLen, (uint8_t)8); i++) {
-      Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i));
-    }
-    Serial.println();
-  }
   
   EEPROM.end();
   
   // Load saved settings for city/state
+  Serial.println("\n----- Loading Settings -----");
   drawConnectingScreen("Starting up...", "Loading settings");
   loadSettings();
   
@@ -117,6 +115,15 @@ void setup() {
       EEPROM.write(TIMEZONE_OFFSET + i, timezoneBytes[i]);
     }
     
+    // Save API key
+    for (size_t i = 0; i < 50; i++) {
+      if (i < API_KEY.length()) {
+        EEPROM.write(API_KEY_OFFSET + i, API_KEY[i]);
+      } else {
+        EEPROM.write(API_KEY_OFFSET + i, 0);
+      }
+    }
+    
     EEPROM.commit();
     EEPROM.end();
     
@@ -133,17 +140,16 @@ void setup() {
   delay(1000);
   
   // Try to connect to saved WiFi with more detailed output
+  Serial.println("\n----- WiFi Connection -----");
   Serial.println("Starting WiFi connection process...");
   connectToWifi();
-  
-  // Disable WiFi status LED again (WiFi connection might have enabled it)
-  digitalWrite(LED_BUILTIN, HIGH);
   
   // After WiFi connection, setup NTP
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WiFi connected successfully, setting up services");
     
     // Setup NTP client
+    Serial.println("\n----- Time Synchronization -----");
     drawConnectingScreen("Setting up", "NTP time sync");
     setupNTP();
     
@@ -152,13 +158,14 @@ void setup() {
     updateTimeAndDate();
     
     // Fetch weather data
+    Serial.println("\n----- Weather Data -----");
     drawConnectingScreen("Fetching", "weather data");
-    fetchWeatherData();
+    Weather::fetchWeatherData();
   } else {
     Serial.println("WiFi not connected after initialization");
   }
   
-  Serial.println("Setup complete");
+  Serial.println("\n----- Setup Complete -----");
 }
 
 void loop() {
@@ -173,9 +180,6 @@ void loop() {
   
   // Handle web server requests
   server.handleClient();
-  
-  // Keep LED off (some operations might turn it on)
-  digitalWrite(LED_BUILTIN, HIGH);  // HIGH turns off the LED
   
   // AP mode with active connections - focus on serving the portal
   if (isAPActive) {
@@ -226,7 +230,7 @@ void loop() {
       
       // Get weather
       drawConnectingScreen("Fetching", "weather data");
-      fetchWeatherData();
+      Weather::fetchWeatherData();
       
       initialSetupDone = true;
     }
@@ -242,7 +246,8 @@ void loop() {
     
     // Weather update when needed
     if (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL) {
-      fetchWeatherData();
+      Serial.println("[Weather] Updating weather data...");
+      Weather::fetchWeatherData();
     }
     
     // Periodic WiFi check
@@ -298,18 +303,26 @@ void loop() {
   
   // Check if it's time to switch screens
   static unsigned long lastScreenChange = 0;
+  static byte currentScreen = 0; // 0 = time, 1 = current weather, 2 = forecast
+  
   if (millis() - lastScreenChange >= SCREEN_SWITCH_INTERVAL) {
-    showTimeScreen = !showTimeScreen;
+    currentScreen = (currentScreen + 1) % 3; // Cycle through 3 screens
     lastScreenChange = millis();
   }
   
   // Update display
   u8g2.clearBuffer();
   
-  if (showTimeScreen) {
-    drawTimeScreen();
-  } else {
-    drawWeatherScreen();
+  switch (currentScreen) {
+    case 0:
+      drawTimeScreen();
+      break;
+    case 1:
+      drawCurrentWeatherScreen();
+      break;
+    case 2:
+      drawForecastScreen();
+      break;
   }
   
   u8g2.sendBuffer();

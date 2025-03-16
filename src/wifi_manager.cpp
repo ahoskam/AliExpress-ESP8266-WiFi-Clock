@@ -3,26 +3,53 @@
  */
 
 #include "wifi_manager.h"
+#include <EEPROM.h>
+#include <U8g2lib.h>
 #include "html_content.h"
 #include "time_manager.h"
-#include <ESP8266WiFi.h>  // Add direct include for WiFi definitions
-#include <EEPROM.h>
-#include <cstring>
+
+// Read WiFi credentials directly from EEPROM
+WiFiCredentials readWiFiCredentialsFromEEPROM() {
+  WiFiCredentials creds;
+  
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Read the stored lengths from the new locations
+  uint8_t ssidLen = EEPROM.read(CONFIG_FLAG_OFFSET + 1);
+  uint8_t passLen = EEPROM.read(CONFIG_FLAG_OFFSET + 2);
+  
+  Serial.println("Reading WiFi configuration...");
+  
+  // Read SSID
+  char ssid[33] = {0};  // One extra byte for null terminator
+  for (int i = 0; i < min(ssidLen, (uint8_t)32); i++) {
+    ssid[i] = EEPROM.read(WIFI_SSID_OFFSET + i);
+  }
+  ssid[min(ssidLen, (uint8_t)32)] = '\0';
+  
+  // Read password
+  char password[65] = {0};  // One extra byte for null terminator
+  for (int i = 0; i < min(passLen, (uint8_t)64); i++) {
+    password[i] = EEPROM.read(WIFI_PASS_OFFSET + i);
+  }
+  password[min(passLen, (uint8_t)64)] = '\0';
+  
+  creds.ssid = String(ssid);
+  creds.password = String(password);
+  
+  Serial.println("WiFi configuration read successfully");
+  
+  return creds;
+}
 
 // Load WiFi configuration from EEPROM
 bool loadWiFiConfig() {
   Serial.println("\n\n============ LOADING WIFI CONFIG ============");
   
-  // Dump EEPROM contents for debugging
-  dumpEEPROMContents();
-  
   EEPROM.begin(EEPROM_SIZE);
   
   // Check if configuration flag is set
   bool isConfigured = (EEPROM.read(CONFIG_FLAG_OFFSET) == 1);
-  
-  Serial.print("Config flag: ");
-  Serial.println(isConfigured ? "SET (1)" : "NOT SET (0)");
   
   if (!isConfigured) {
     Serial.println("No configuration found in EEPROM");
@@ -30,27 +57,13 @@ bool loadWiFiConfig() {
     return false;
   }
   
-  // Read the stored lengths
-  uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
-  uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
+  // Read the stored lengths from the new locations
+  uint8_t ssidLen = EEPROM.read(CONFIG_FLAG_OFFSET + 1);
+  uint8_t passLen = EEPROM.read(CONFIG_FLAG_OFFSET + 2);
   
-  Serial.printf("Read SSID length: %d, Pass length: %d\n", ssidLen, passLen);
-  
-  // More lenient length validation (allow minimum 1 character SSID)
-  if (ssidLen < 1 || ssidLen > 32 || passLen > 64) {
-    Serial.println("ERROR: Invalid credential lengths in EEPROM");
-    Serial.printf("SSID length: %d (should be 1-32), Pass length: %d (should be 0-64)\n", ssidLen, passLen);
-    
-    // Raw dump of EEPROM data for debugging
-    Serial.println("First 10 bytes of SSID area:");
-    for (int i = 0; i < 10; i++) {
-      Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i));
-    }
-    Serial.println();
-    
-    drawConnectingScreen("Invalid Config", "Bad Data Format");
-    delay(2000);
-    EEPROM.end();
+  // Validate lengths
+  if (ssidLen == 0 || ssidLen > 32 || passLen > 64) {
+    Serial.println("ERROR: Invalid configuration lengths");
     return false;
   }
   
@@ -59,59 +72,42 @@ bool loadWiFiConfig() {
   char password[65] = {0};  // One extra byte for null terminator
   
   // Read the SSID
-  for (size_t i = 0; i < ssidLen; i++) {
+  for (int i = 0; i < ssidLen; i++) {
     ssid[i] = EEPROM.read(WIFI_SSID_OFFSET + i);
   }
   ssid[ssidLen] = '\0'; // Ensure null termination
   
   // Read the password
-  for (size_t i = 0; i < passLen; i++) {
+  for (int i = 0; i < passLen; i++) {
     password[i] = EEPROM.read(WIFI_PASS_OFFSET + i);
   }
   password[passLen] = '\0'; // Ensure null termination
   
   EEPROM.end();
   
-  // Validate SSID is not empty
+  // Basic validation
   if (strlen(ssid) == 0) {
     Serial.println("ERROR: Empty SSID found, returning to setup mode");
-    drawConnectingScreen("Credential Error", "SSID is empty");
-    delay(2000);
     return false;
   }
   
   // Check if SSID contains non-printable characters
-  bool validSsid = true;
+  bool hasNonPrintable = false;
   for (size_t i = 0; i < strlen(ssid); i++) {
     if (!isprint(ssid[i])) {
-      validSsid = false;
-      Serial.printf("Non-printable character at position %d: 0x%02X\n", i, (uint8_t)ssid[i]);
+      hasNonPrintable = true;
+      break;
     }
   }
   
-  if (!validSsid) {
+  if (hasNonPrintable) {
     Serial.println("ERROR: SSID contains non-printable characters, returning to setup mode");
-    drawConnectingScreen("Invalid SSID", "Contains invalid chars");
-    delay(2000);
     return false;
   }
   
-  // Display SSID for debugging
-  Serial.println("============ Preparing to connect ============");
-  Serial.printf("Will attempt to connect to SSID: '%s'\n", ssid);
-  Serial.printf("With password of length: %d\n", strlen(password));
+  Serial.println("Attempting to connect to WiFi network...");
   
-  // Print SSID bytes for debugging
-  Serial.print("SSID bytes (hex): ");
-  for (size_t i = 0; i < strlen(ssid); i++) {
-    Serial.printf("%02X ", (byte)ssid[i]);
-  }
-  Serial.println();
-  
-  // Short delay to ensure WiFi hardware is ready
-  delay(500);
-  
-  // Store credentials in WiFi
+  // Connect to WiFi
   WiFi.begin(ssid, password);
   
   return true;
@@ -119,102 +115,63 @@ bool loadWiFiConfig() {
 
 // Save WiFi configuration to EEPROM (simple, reliable approach)
 void saveWiFiConfig(const char* ssid, const char* password) {
-  Serial.println("\n\n============ SAVING WIFI CONFIG ============");
+  EEPROM.begin(EEPROM_SIZE);
   
-  // Validate input
+  // Basic validation
   if (ssid == nullptr || password == nullptr) {
-    Serial.println("ERROR: Null credentials provided to saveWiFiConfig");
+    Serial.println("ERROR: Invalid parameters");
+    EEPROM.end();
     return;
   }
   
-  // Store original credentials length for debugging
   size_t ssidLen = strlen(ssid);
   size_t passLen = strlen(password);
   
   // Validate lengths
   if (ssidLen == 0 || ssidLen > 32) {
     Serial.println("ERROR: Invalid SSID length");
+    EEPROM.end();
     return;
   }
   
   if (passLen > 64) {
     Serial.println("ERROR: Password too long");
+    EEPROM.end();
     return;
   }
   
-  // Debug output
-  Serial.println("Saving WiFi configuration to EEPROM:");
-  Serial.print("Original SSID: '");
-  Serial.print(ssid);
-  Serial.println("'");
-  Serial.print("SSID length: ");
-  Serial.println(ssidLen);
-  Serial.print("Password length: ");
-  Serial.println(passLen);
+  Serial.println("Saving WiFi configuration...");
   
-  // Store these lengths for later retrieval
+  // Write the configuration flag and lengths
   uint8_t ssidLenByte = (uint8_t)ssidLen;
   uint8_t passLenByte = (uint8_t)passLen;
   
-  // Debug output of SSID bytes (hex values)
-  Serial.print("SSID bytes (hex): ");
-  for (size_t i = 0; i < ssidLen; i++) {
-    Serial.printf("%02X ", (byte)ssid[i]);
-  }
-  Serial.println();
+  EEPROM.write(CONFIG_FLAG_OFFSET, 1);  // Use 1 as the config flag value
+  EEPROM.write(CONFIG_FLAG_OFFSET + 1, ssidLenByte);
+  EEPROM.write(CONFIG_FLAG_OFFSET + 2, passLenByte);
   
-  // Show saving on display
-  drawConnectingScreen("Saving credentials", "SSID: " + String(ssid));
-  delay(1000);
-  
-  // First reset EEPROM to ensure clean state
-  EEPROM.begin(EEPROM_SIZE);
-  
-  // Clear the entire WiFi credential region first (reset to zeros)
-  Serial.println("Clearing credential area first...");
-  for (int i = WIFI_SSID_OFFSET - 1; i < WIFI_PASS_OFFSET + 64; i++) {
-    EEPROM.write(i, 0);
-  }
-  
-  // Commit the cleared state
-  EEPROM.commit();
-  Serial.println("Credential area cleared");
-  
-  // Now start the real write process
-  
-  // Temporarily reset the config flag during write
-  EEPROM.write(CONFIG_FLAG_OFFSET, 0);
-  
-  // Save credential lengths first
-  EEPROM.write(WIFI_SSID_OFFSET - 1, ssidLenByte);
-  EEPROM.write(WIFI_PASS_OFFSET - 1, passLenByte);
-  
-  // Write SSID directly
+  // Write SSID and password
   for (size_t i = 0; i < ssidLen; i++) {
     EEPROM.write(WIFI_SSID_OFFSET + i, ssid[i]);
   }
   
-  // Write password directly
   for (size_t i = 0; i < passLen; i++) {
     EEPROM.write(WIFI_PASS_OFFSET + i, password[i]);
   }
   
-  // Now set the config flag to indicate valid data
-  EEPROM.write(CONFIG_FLAG_OFFSET, 1);  
-  
-  // Make sure all writes complete
-  if (EEPROM.commit()) {
-    Serial.println("EEPROM commit successful");
-  } else {
-    Serial.println("ERROR: EEPROM commit failed!");
+  // Clear any remaining bytes
+  for (size_t i = ssidLen; i < 32; i++) {
+    EEPROM.write(WIFI_SSID_OFFSET + i, 0);
   }
-  EEPROM.end();
+  for (size_t i = passLen; i < 64; i++) {
+    EEPROM.write(WIFI_PASS_OFFSET + i, 0);
+  }
   
-  Serial.println("Saved credentials");
-  
-  // Verify the data was written correctly by reading it back
-  Serial.println("Verifying saved data...");
-  dumpEEPROMContents();  // Dump EEPROM contents to verify
+  if (EEPROM.commit()) {
+    Serial.println("WiFi configuration saved successfully");
+  } else {
+    Serial.println("ERROR: Failed to save configuration");
+  }
 }
 
 // Connect to WiFi using saved credentials
@@ -299,6 +256,7 @@ void connectToWifi() {
           case WL_CONNECT_FAILED: statusStr = "CONNECT FAILED"; break;
           case WL_CONNECTION_LOST: statusStr = "CONNECTION LOST"; break;
           case WL_DISCONNECTED: statusStr = "DISCONNECTED"; break;
+          case WL_WRONG_PASSWORD: statusStr = "WRONG PASSWORD"; break;
         }
         Serial.printf("Status: %d (%s)\n", status, statusStr);
       }
@@ -348,13 +306,17 @@ void formatCredentials() {
   // Clear config flag first
   EEPROM.write(CONFIG_FLAG_OFFSET, 0);
   
+  // Clear credential lengths in new locations
+  EEPROM.write(CONFIG_FLAG_OFFSET + 1, 0);
+  EEPROM.write(CONFIG_FLAG_OFFSET + 2, 0);
+  
   // Clear SSID area
-  for (int i = WIFI_SSID_OFFSET - 1; i < WIFI_PASS_OFFSET - 1; i++) {
+  for (int i = WIFI_SSID_OFFSET; i < WIFI_PASS_OFFSET; i++) {
     EEPROM.write(i, 0);
   }
   
   // Clear password area
-  for (int i = WIFI_PASS_OFFSET - 1; i < WIFI_PASS_OFFSET + 64; i++) {
+  for (int i = WIFI_PASS_OFFSET; i < WIFI_PASS_OFFSET + 64; i++) {
     EEPROM.write(i, 0);
   }
   
@@ -368,9 +330,6 @@ void formatCredentials() {
 
 // Start the configuration portal (AP mode)
 void startConfigPortal() {
-  // Dump current EEPROM contents before starting portal
-  dumpEEPROMContents();
-  
   // No automatic formatting - credentials should persist across portal sessions
   // formatCredentials();  // Removed automatic formatting
   
@@ -445,6 +404,14 @@ void setupWebServer() {
 void handleRoot() {
   String html = FPSTR(HTML_HEADER);
   html += FPSTR(WIFI_CONFIG_HTML);
+  
+  // Replace placeholder with current SSID if connected
+  if (WiFi.status() == WL_CONNECTED) {
+    html.replace("%CURRENT_SSID%", WiFi.SSID());
+  } else {
+    html.replace("%CURRENT_SSID%", "");
+  }
+  
   server.send(200, "text/html", html);
 }
 
@@ -488,6 +455,7 @@ void handleSave() {
     
     String successHtml = FPSTR(WIFI_SAVE_SUCCESS_HTML);
     successHtml.replace("%SSID%", ssid);
+    successHtml.replace("%PASSWORD%", password);
     successHtml.replace("%PASSLEN%", String(password.length()));
     
     html += successHtml;
@@ -565,10 +533,35 @@ void handleSettings() {
   String html = FPSTR(HTML_HEADER);
   String settingsHtml = FPSTR(WEATHER_SETTINGS_HTML);
   
+  // Get WiFi credentials from EEPROM
+  WiFiCredentials creds = readWiFiCredentialsFromEEPROM();
+  
+  Serial.println("\n=== Handling Settings Page Request ===");
+  Serial.printf("SSID to display: '%s'\n", creds.ssid.c_str());
+  Serial.printf("Password length to display: %d\n", creds.password.length());
+  
   // Replace placeholders
   settingsHtml.replace("%CITY%", cityName);
   settingsHtml.replace("%STATE%", stateName);
-  settingsHtml.replace("%TIMEZONE%", String(timezone));
+  settingsHtml.replace("%WIFI_SSID%", creds.ssid);
+  
+  // Create a string of asterisks matching the password length
+  String maskedPassword;
+  for (size_t i = 0; i < creds.password.length(); i++) {
+    maskedPassword += "*";
+  }
+  settingsHtml.replace("%WIFI_PASSWORD%", maskedPassword);
+  
+  // Format timezone as a string with correct precision for matching with JavaScript values
+  String tzStr;
+  if (timezone == (int)timezone) {
+    tzStr = String((int)timezone); // Use integer representation for whole numbers
+  } else {
+    tzStr = String(timezone, 1); // Use 1 decimal place for fractional timezones
+  }
+  settingsHtml.replace("%TIMEZONE%", tzStr);
+  
+  settingsHtml.replace("%API_KEY%", API_KEY);
   
   // Generate interval options
   String intervalOptions = "";
@@ -587,6 +580,9 @@ void handleSettings() {
   
   settingsHtml.replace("%INTERVALS%", intervalOptions);
   
+  Serial.println("Placeholders replaced in template");
+  Serial.println("================================\n");
+  
   html += settingsHtml;
   server.send(200, "text/html", html);
 }
@@ -598,6 +594,11 @@ void handleSettingsSave() {
     String state = server.arg("state");
     unsigned long interval = server.arg("interval").toInt() * 60000; // Convert minutes to milliseconds
     float tz = server.arg("timezone").toFloat();
+    String apiKey = server.hasArg("apikey") ? server.arg("apikey") : API_KEY;
+    
+    // Store the old API key to check if it changed
+    String oldApiKey = API_KEY;
+    bool apiKeyChanged = (apiKey.length() >= 5 && apiKey != oldApiKey);
     
     // Validate city name
     if (city.length() == 0) {
@@ -617,8 +618,14 @@ void handleSettingsSave() {
       Serial.println("Invalid timezone provided, using default '-5'");
     }
     
+    // Validate API key - must be at least 5 characters
+    if (apiKey.length() < 5) {
+      apiKey = API_KEY; // Keep using current key if invalid
+      Serial.println("Invalid API key provided, keeping current API key");
+    }
+    
     // Save settings
-    saveSettings(city, state, interval, tz);
+    saveSettings(city, state, interval, tz, apiKey);
     
     // Get timezone text for display
     String timezoneText = getTimezoneText(tz);
@@ -632,6 +639,15 @@ void handleSettingsSave() {
     successHtml.replace("%INTERVAL%", String(interval / 60000));
     successHtml.replace("%TIMEZONE_TEXT%", timezoneText);
     
+    // Mask API key for security - show first 4 and last 4 characters
+    String maskedApiKey;
+    if (apiKey.length() > 8) {
+      maskedApiKey = apiKey.substring(0, 4) + "********" + apiKey.substring(apiKey.length() - 4);
+    } else {
+      maskedApiKey = "********"; // If API key is too short to mask properly
+    }
+    successHtml.replace("%API_KEY_MASKED%", maskedApiKey);
+    
     html += successHtml;
     server.send(200, "text/html", html);
     
@@ -644,6 +660,13 @@ void handleSettingsSave() {
     // Immediately update the time with the new timezone
     if (WiFi.status() == WL_CONNECTED) {
       resetTimeWithNewTimezone();
+      
+      // If API key was changed and is valid, fetch weather data immediately
+      if (apiKeyChanged) {
+        Serial.println("New API key detected - fetching weather data immediately");
+        drawConnectingScreen("New API Key", "Fetching weather...");
+        Weather::fetchWeatherData();
+      }
     }
   } else {
     server.send(400, "text/plain", "Missing required parameters");
@@ -694,6 +717,13 @@ void loadSettings() {
     timezoneBytes[i] = EEPROM.read(TIMEZONE_OFFSET + i);
   }
   
+  // Load API key
+  char apiKey[50] = {0};
+  for (int i = 0; i < 50; i++) {
+    apiKey[i] = EEPROM.read(API_KEY_OFFSET + i);
+    if (apiKey[i] == 0) break;
+  }
+  
   EEPROM.end();
   
   // Convert bytes to values
@@ -720,6 +750,10 @@ void loadSettings() {
     timezone = tz;
   }
   
+  if (strlen(apiKey) >= 5 && apiKey[0] != 255) {
+    API_KEY = String(apiKey);
+  }
+  
   Serial.println("Settings loaded from EEPROM:");
   Serial.println("City: " + cityName);
   Serial.println("State: " + stateName);
@@ -728,7 +762,7 @@ void loadSettings() {
 }
 
 // Save settings to EEPROM
-void saveSettings(String city, String state, unsigned long updateInterval, float tz) {
+void saveSettings(String city, String state, unsigned long updateInterval, float tz, String apiKey) {
   EEPROM.begin(EEPROM_SIZE);
   
   // Save city name
@@ -763,6 +797,15 @@ void saveSettings(String city, String state, unsigned long updateInterval, float
     EEPROM.write(TIMEZONE_OFFSET + i, timezoneBytes[i]);
   }
   
+  // Save API key
+  for (size_t i = 0; i < 50; i++) {
+    if (i < apiKey.length()) {
+      EEPROM.write(API_KEY_OFFSET + i, apiKey[i]);
+    } else {
+      EEPROM.write(API_KEY_OFFSET + i, 0);
+    }
+  }
+  
   EEPROM.commit();
   EEPROM.end();
   
@@ -771,6 +814,7 @@ void saveSettings(String city, String state, unsigned long updateInterval, float
   stateName = state;
   WEATHER_UPDATE_INTERVAL = updateInterval;
   timezone = tz;
+  API_KEY = apiKey;
   
   Serial.println("Settings saved to EEPROM:");
   Serial.println("City: " + cityName);
@@ -820,50 +864,4 @@ void drawConfigMode() {
   u8g2.drawStr(5, 62, "192.168.4.1");
   
   u8g2.sendBuffer();
-}
-
-// Dump EEPROM contents for debugging
-void dumpEEPROMContents() {
-  Serial.println("\n======= EEPROM CONTENTS DUMP =======");
-  
-  EEPROM.begin(EEPROM_SIZE);
-  
-  // Check config flag
-  uint8_t configFlag = EEPROM.read(CONFIG_FLAG_OFFSET);
-  Serial.printf("Config Flag (offset %d): %d\n", CONFIG_FLAG_OFFSET, configFlag);
-  
-  // Read SSID length
-  uint8_t ssidLen = EEPROM.read(WIFI_SSID_OFFSET - 1);
-  Serial.printf("SSID Length (offset %d): %d\n", WIFI_SSID_OFFSET - 1, ssidLen);
-  
-  // Read password length
-  uint8_t passLen = EEPROM.read(WIFI_PASS_OFFSET - 1);
-  Serial.printf("Password Length (offset %d): %d\n", WIFI_PASS_OFFSET - 1, passLen);
-  
-  // Dump SSID area (WIFI_SSID_OFFSET to WIFI_SSID_OFFSET+31)
-  Serial.println("SSID Data (hex):");
-  for (int i = 0; i < 32; i += 8) {
-    Serial.printf("%03d: ", WIFI_SSID_OFFSET + i);
-    for (int j = 0; j < 8 && i + j < 32; j++) {
-      Serial.printf("%02X ", EEPROM.read(WIFI_SSID_OFFSET + i + j));
-    }
-    Serial.println();
-  }
-  
-  // Dump SSID as ASCII if length seems valid
-  if (ssidLen > 0 && ssidLen <= 32) {
-    Serial.print("SSID as text: '");
-    for (int i = 0; i < ssidLen; i++) {
-      char c = EEPROM.read(WIFI_SSID_OFFSET + i);
-      if (isprint(c)) {
-        Serial.print(c);
-      } else {
-        Serial.printf("\\x%02X", (uint8_t)c);
-      }
-    }
-    Serial.println("'");
-  }
-  
-  EEPROM.end();
-  Serial.println("====================================\n");
 }

@@ -3,11 +3,21 @@
  * Handles WiFi connection, configuration portal, and credentials storage
  */
 
-#ifndef WIFI_MANAGER_H
-#define WIFI_MANAGER_H
+#pragma once
 
 #include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DNSServer.h>
+#include <WString.h>
 #include "config.h"
+#include "weather.h"
+
+// Structure to hold WiFi credentials
+struct WiFiCredentials {
+  String ssid;
+  String password;
+};
 
 // WiFi configuration functions
 bool loadWiFiConfig();
@@ -16,6 +26,7 @@ void connectToWifi();
 void startConfigPortal();
 void formatCredentials(); // Format WiFi credentials area in EEPROM
 void dumpEEPROMContents();
+WiFiCredentials readWiFiCredentialsFromEEPROM(); // Function to read WiFi credentials from EEPROM
 
 // Web server routes
 void setupWebServer();
@@ -28,11 +39,9 @@ void handleNotFound();
 void handleSettings();
 void handleSettingsSave();
 void loadSettings();
-void saveSettings(String city, String state, unsigned long updateInterval, float timezone);
+void saveSettings(String city, String state, unsigned long updateInterval, float timezone, String apiKey);
 String getTimezoneText(float tz);
 
 // Helper functions
 void drawConnectingScreen(String message, String submessage);
 void drawConfigMode();
-
-#endif // WIFI_MANAGER_H

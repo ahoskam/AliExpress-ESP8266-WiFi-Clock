@@ -26,4 +26,7 @@ String getDayOfWeekShort(int dayNum);
 String getMonthShort(int monthNum);
 time_t getEpochTime();
 
+// Function to check if DST should be applied
+bool shouldApplyDST(const struct tm* timeinfo);
+
 #endif // TIME_MANAGER_H

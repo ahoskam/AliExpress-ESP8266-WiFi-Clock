@@ -17,6 +17,32 @@ void setupNTP() {
   Serial.println("NTP client initialized");
 }
 
+// Function to check if DST should be applied based on US rules
+bool shouldApplyDST(const struct tm* timeinfo) {
+    int month = timeinfo->tm_mon + 1;  // tm_mon is 0-based
+    int day = timeinfo->tm_mday;
+    
+    // April through October are definitely DST
+    if (month > 3 && month < 11) {
+        return true;
+    }
+    // March: DST starts on the second Sunday
+    else if (month == 3) {
+        // Calculate the day of the second Sunday
+        int weekday = timeinfo->tm_wday;
+        int secondSunday = 8 + (7 - ((weekday + 8 - 1) % 7));
+        return day >= secondSunday;
+    }
+    // November: DST ends on the first Sunday
+    else if (month == 11) {
+        // Calculate the day of the first Sunday
+        int weekday = timeinfo->tm_wday;
+        int firstSunday = 1 + (7 - ((weekday + 1 - 1) % 7));
+        return day < firstSunday;
+    }
+    return false;
+}
+
 // Update time and date from NTP
 void updateTimeAndDate() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -32,38 +58,14 @@ void updateTimeAndDate() {
     // Apply timezone offset (convert to seconds)
     time_t localTime = utcTime + (timezone * 3600);
     
-    // Check if DST should be applied (for US timezones)
-    bool applyDST = false;
-    
     // Convert UTC time to tm structure for DST check
     struct tm *utcTm = gmtime(&utcTime);
-    int year = utcTm->tm_year + 1900;
-    int month = utcTm->tm_mon + 1;
-    int day = utcTm->tm_mday;
-    int weekday = utcTm->tm_wday;
     
-    // US DST rules: Starts second Sunday in March, ends first Sunday in November
-    if (month > 3 && month < 11) {
-      // April through October are definitely DST
-      applyDST = true;
-    } else if (month == 3) {
-      // March: DST starts on the second Sunday
-      // Calculate the day of the second Sunday
-      int secondSunday = 8 + (7 - ((weekday + 8 - 1) % 7));
-      if (day >= secondSunday) {
-        applyDST = true;
-      }
-    } else if (month == 11) {
-      // November: DST ends on the first Sunday
-      // Calculate the day of the first Sunday
-      int firstSunday = 1 + (7 - ((weekday + 1 - 1) % 7));
-      if (day < firstSunday) {
-        applyDST = true;
-      }
-    }
+    // Check if DST should be applied (for US timezones)
+    bool shouldApplyDst = shouldApplyDST(utcTm);
     
     // Apply DST if needed (add 1 hour = 3600 seconds)
-    if (applyDST && timezone < 0) {  // Only apply to US timezones (negative values)
+    if (shouldApplyDst && timezone < 0) {  // Only apply to US timezones (negative values)
       localTime += 3600;
       Serial.println("Applying DST adjustment (+1 hour)");
     }
@@ -73,7 +75,7 @@ void updateTimeAndDate() {
     Serial.print(utcTime);
     Serial.print(" -> Local time with timezone ");
     Serial.print(timezone);
-    if (applyDST) Serial.print(" (with DST)");
+    if (shouldApplyDst) Serial.print(" (with DST)");
     Serial.print(": ");
     Serial.println(localTime);
     

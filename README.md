@@ -6,7 +6,16 @@ This is an open-source project that provides alternative firmware for the ESP826
 
 - Easy WiFi configuration through a web interface
 - Real-time clock synchronization using NTP
-- Weather display
+- Three display screens:
+  1. Time Screen
+     - Current time display
+     - Visual progression from sunrise to sunset
+     - Sunset to sunrise progression (currently under development)
+  2. Current Weather Screen
+     - Current temperature
+     - Weather condition icon
+  3. Forecast Screen
+     - 3-day weather forecast
 - Web-based configuration interface
 - Secure, open-source implementation
 
@@ -55,9 +64,16 @@ Once connected to your WiFi network, you can access the device's settings page:
 - Time Settings
   - Timezone selection from dropdown list
 
+- Display Features
+  - Three rotating screens:
+    1. Time with day/night progression
+    2. Current weather conditions
+    3. 3-day forecast display
+
 - Weather Settings
   - Location settings
   - Update frequency
+  - **Required**: OpenWeatherMap API key (obtain from [openweathermap.org](https://openweathermap.org/))
 
 ### Planned Enhancements (TODOs)
 
@@ -76,6 +92,12 @@ Once connected to your WiFi network, you can access the device's settings page:
 - System Features
   - [ ] Current connection status display
   - [ ] More customization options
+
+## Known Issues
+
+The following issues are currently being tracked and worked on:
+
+1. **Sunset to Sunrise Progression**: The sunset to sunrise transition feature is currently not functioning as expected and is under investigation. The sunrise to sunset progression is working correctly.
 
 ## Contributing
 

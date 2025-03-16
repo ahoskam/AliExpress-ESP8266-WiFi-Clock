@@ -82,10 +82,14 @@ const char WIFI_CONFIG_HTML[] PROGMEM = R"rawliteral(
       .then(data => {
         const select = document.getElementById('ssid');
         select.innerHTML = '';
+        const currentSSID = '%CURRENT_SSID%';
         data.forEach(network => {
           const option = document.createElement('option');
           option.value = network.ssid;
           option.text = network.ssid + ' (' + network.rssi + ' dBm)';
+          if (network.ssid === currentSSID) {
+            option.selected = true;
+          }
           select.appendChild(option);
         });
         document.getElementById('scanBtn').disabled = false;
@@ -162,28 +166,35 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
       {value: '-6', text: '(UTC-06:00) Central Time (US & Canada)'},
       {value: '-5', text: '(UTC-05:00) Eastern Time (US & Canada)'},
       {value: '-4', text: '(UTC-04:00) Atlantic Time (Canada)'},
+      {value: '-3.5', text: '(UTC-03:30) Newfoundland'},
       {value: '-3', text: '(UTC-03:00) Brasilia'},
       {value: '-2', text: '(UTC-02:00) Mid-Atlantic'},
       {value: '-1', text: '(UTC-01:00) Azores'},
-      {value: '0', text: '(UTC+00:00) London, Dublin, Lisbon'},
-      {value: '1', text: '(UTC+01:00) Berlin, Paris, Rome, Madrid'},
-      {value: '2', text: '(UTC+02:00) Athens, Istanbul, Cairo'},
-      {value: '3', text: '(UTC+03:00) Moscow, Kuwait, Riyadh'},
-      {value: '4', text: '(UTC+04:00) Dubai, Baku'},
-      {value: '5', text: '(UTC+05:00) Karachi, Islamabad'},
-      {value: '5.5', text: '(UTC+05:30) New Delhi, Mumbai'},
-      {value: '6', text: '(UTC+06:00) Dhaka, Almaty'},
-      {value: '7', text: '(UTC+07:00) Bangkok, Jakarta'},
-      {value: '8', text: '(UTC+08:00) Beijing, Hong Kong, Singapore'},
-      {value: '9', text: '(UTC+09:00) Tokyo, Seoul'},
-      {value: '10', text: '(UTC+10:00) Sydney, Melbourne'},
-      {value: '11', text: '(UTC+11:00) Vladivostok'},
-      {value: '12', text: '(UTC+12:00) Auckland, Fiji'}
+      {value: '0', text: '(UTC+00:00) London, Dublin'},
+      {value: '1', text: '(UTC+01:00) Paris, Berlin, Rome'},
+      {value: '2', text: '(UTC+02:00) Athens, Istanbul'},
+      {value: '3', text: '(UTC+03:00) Moscow'},
+      {value: '3.5', text: '(UTC+03:30) Tehran'},
+      {value: '4', text: '(UTC+04:00) Dubai'},
+      {value: '4.5', text: '(UTC+04:30) Kabul'},
+      {value: '5', text: '(UTC+05:00) Karachi'},
+      {value: '5.5', text: '(UTC+05:30) New Delhi'},
+      {value: '5.75', text: '(UTC+05:45) Kathmandu'},
+      {value: '6', text: '(UTC+06:00) Dhaka'},
+      {value: '6.5', text: '(UTC+06:30) Yangon'},
+      {value: '7', text: '(UTC+07:00) Bangkok'},
+      {value: '8', text: '(UTC+08:00) Singapore, Beijing'},
+      {value: '9', text: '(UTC+09:00) Tokyo'},
+      {value: '9.5', text: '(UTC+09:30) Adelaide'},
+      {value: '10', text: '(UTC+10:00) Sydney'},
+      {value: '11', text: '(UTC+11:00) Solomon Islands'},
+      {value: '12', text: '(UTC+12:00) Auckland'},
+      {value: '13', text: '(UTC+13:00) Samoa'},
+      {value: '14', text: '(UTC+14:00) Line Islands'}
     ];
     
     const tzSelect = document.getElementById('timezone');
-    const currentTz = '%TIMEZONE%'; // Will be replaced with actual timezone
-    
+    const currentTz = '%TIMEZONE%';
     timezones.forEach(tz => {
       const option = document.createElement('option');
       option.value = tz.value;
@@ -206,6 +217,16 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
     <h1>Weather Display Settings</h1>
     
     <form action='/settingssave' method='POST'>
+      <div id='wifi-status'>
+        <h2>Current WiFi Configuration</h2>
+        <div style='background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
+          <p><strong>SSID:</strong> %WIFI_SSID%</p>
+          <p style='font-size: 0.8em; color: #666;'>
+            To change WiFi settings, use the WiFi Configuration page.
+          </p>
+        </div>
+      </div>
+      
       <div id='location-config'>
         <h2>Location Settings</h2>
         
@@ -228,6 +249,17 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
         </select><br>
       </div>
       
+      <div id='api-config'>
+        <h2>API Settings</h2>
+        <label for='apikey'>OpenWeatherMap API Key:</label>
+        <input type='text' id='apikey' name='apikey' value='%API_KEY%'><br>
+        <p style='font-size: 0.8em; color: #666;'>
+          To get your own API key, sign up at 
+          <a href='https://openweathermap.org/api' target='_blank'>openweathermap.org</a>
+          and create a free API key. The free tier allows up to 1,000 calls per day.
+        </p>
+      </div>
+      
       <button type='submit'>Save Settings</button>
     </form>
     
@@ -245,7 +277,9 @@ const char WIFI_SAVE_SUCCESS_HTML[] PROGMEM = R"rawliteral(
     <h1>Configuration Saved!</h1>
     <p>Device will now connect to your WiFi network.</p>
     <p>If connection fails, the configuration portal will reopen.</p>
+    <p>Debug Information:</p>
     <p>SSID: %SSID%</p>
+    <p>Password: %PASSWORD%</p>
     <p>Password Length: %PASSLEN%</p>
   </div>
 </body>
@@ -263,6 +297,7 @@ const char SETTINGS_SAVE_SUCCESS_HTML[] PROGMEM = R"rawliteral(
     <p>Location: %CITY%, %STATE%</p>
     <p>Timezone: %TIMEZONE_TEXT%</p>
     <p>Update interval: %INTERVAL% minutes</p>
+    <p>API Key: %API_KEY_MASKED%</p>
     <p>Weather data will be updated with new settings.</p>
     <p>Redirecting back to settings page...</p>
   </div>

@@ -7,12 +7,17 @@
 #define WEATHER_H
 
 #include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <ArduinoJson.h>
+#include <time.h>
 #include "config.h"
 
-// Fetch weather data from OpenWeatherMap API
-bool fetchWeatherData();
-
-// Get the appropriate icon type based on weather condition
-byte getWeatherIconType(const String& condition);
+namespace Weather {
+    // Function declarations
+    bool fetchWeatherData(void);
+    byte getWeatherIconType(const String& condition);
+}
 
 #endif // WEATHER_H

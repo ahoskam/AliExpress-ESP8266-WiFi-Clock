@@ -25,10 +25,13 @@
 #define WIFI_SSID_OFFSET 0
 #define WIFI_PASS_OFFSET 32
 #define CONFIG_FLAG_OFFSET 128
-#define CITY_OFFSET 130
-#define STATE_OFFSET 180
+#define CONFIG_FLAG 1  // Value indicating valid WiFi configuration
+// CONFIG_FLAG_OFFSET+1 and +2 are reserved for SSID and password lengths
+#define CITY_OFFSET 132
+#define STATE_OFFSET 182
 #define UPDATE_INTERVAL_OFFSET 200
 #define TIMEZONE_OFFSET 210
+#define API_KEY_OFFSET 220
 
 // Configuration portal constants
 extern const char* AP_NAME;
@@ -48,7 +51,7 @@ extern WiFiUDP ntpUDP;
 extern NTPClient timeClient;
 
 // OpenWeatherMap settings
-extern const String API_KEY;
+extern String API_KEY;
 extern const String UNITS;
 extern String cityName;
 extern String stateName;
@@ -97,7 +100,7 @@ struct WeatherDay {
 };
 
 // Weather forecast data
-extern WeatherDay forecast[6];
+extern WeatherDay forecast[5];
 
 // Weather icon bitmaps
 extern const uint8_t sunny_icon[8];

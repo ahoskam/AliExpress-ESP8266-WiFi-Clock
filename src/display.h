@@ -12,10 +12,16 @@
 // Draw weather icon based on type
 void drawWeatherIcon(int x, int y, byte iconType, byte size);
 
+// Draw extra large weather icon (custom function for current weather)
+void drawExtraLargeWeatherIcon(int x, int y, byte iconType);
+
 // Draw the time screen with sun position indicator
 void drawTimeScreen();
 
-// Draw the weather screen with forecast
-void drawWeatherScreen();
+// Draw current weather screen
+void drawCurrentWeatherScreen();
+
+// Draw forecast screen
+void drawForecastScreen();
 
 #endif // DISPLAY_H

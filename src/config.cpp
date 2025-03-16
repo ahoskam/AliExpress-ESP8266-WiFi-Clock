@@ -22,7 +22,7 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
 // OpenWeatherMap settings
-const String API_KEY = "61638ec563f3f9e230dbeb2e3a83a507";
+String API_KEY = "";
 const String UNITS = "imperial";  // Options: metric, imperial
 String cityName = "New York";   // Default city, configurable
 String stateName = "NY";        // Default state, configurable
@@ -63,9 +63,8 @@ int sunsetMinute = 0;
 unsigned long lastWeatherUpdate = 0;
 
 // Weather forecast data
-WeatherDay forecast[6] = {
+WeatherDay forecast[5] = {
   {"???", 0, 0, 0}, // Will be populated from API
-  {"???", 0, 0, 0},
   {"???", 0, 0, 0},
   {"???", 0, 0, 0},
   {"???", 0, 0, 0},
