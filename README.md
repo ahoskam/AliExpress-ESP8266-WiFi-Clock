@@ -84,7 +84,7 @@ Once connected to your WiFi network, you can access the device's settings page:
   - [x] Time format selection (12/24 hour)
   
 - Weather Settings
-  - [ ] Temperature unit toggle (°C/°F)
+  - [x] Temperature unit toggle (°C/°F)
 
 - Time Settings
   - [ ] Daylight saving time configuration

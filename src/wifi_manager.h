@@ -39,7 +39,7 @@ void handleNotFound();
 void handleSettings();
 void handleSettingsSave();
 void loadSettings();
-void saveSettings(String city, String state, unsigned long updateInterval, float timezone, String apiKey, bool is12Hour = false);
+void saveSettings(String city, String state, unsigned long updateInterval, float timezone, String apiKey, bool is12Hour = false, bool isMetric = false);
 String getTimezoneText(float tz);
 
 // Helper functions

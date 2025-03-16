@@ -33,6 +33,7 @@
 #define TIMEZONE_OFFSET 210
 #define API_KEY_OFFSET 220
 #define TIME_FORMAT_OFFSET 270  // New offset for time format preference
+#define TEMP_UNIT_OFFSET 271  // Offset for temperature unit preference (C/F)
 
 // Configuration portal constants
 extern const char* AP_NAME;
@@ -53,9 +54,10 @@ extern NTPClient timeClient;
 
 // OpenWeatherMap settings
 extern String API_KEY;
-extern const String UNITS;
+extern String UNITS;  // Changed from const to allow dynamic switching
 extern String cityName;
 extern String stateName;
+extern bool useMetricUnits; // true for Celsius, false for Fahrenheit
 
 // Screen switching timing
 extern const unsigned long SCREEN_SWITCH_INTERVAL;

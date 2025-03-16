@@ -274,7 +274,8 @@ void loop() {
       bool weatherUpdateSuccess = Weather::fetchWeatherData();
       if (weatherUpdateSuccess) {
         Serial.println("[Weather] Weather update successful");
-        Serial.println("[Weather] Current temp: " + String(currentTemp) + "°F, Condition: " + currentCondition);
+        Serial.println("[Weather] Fetched weather data");
+        Serial.println("[Weather] Current temp: " + String(currentTemp) + (useMetricUnits ? "°C" : "°F") + ", Condition: " + currentCondition);
       } else {
         Serial.println("[Weather] Weather update failed");
       }

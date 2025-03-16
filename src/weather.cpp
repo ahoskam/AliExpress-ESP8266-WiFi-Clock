@@ -378,12 +378,15 @@ namespace Weather {
                     Serial.println("[Weather] Weather data successfully retrieved");
                     Serial.print("[Weather] Current temperature: ");
                     Serial.print(currentTemp);
-                    Serial.println("°F");
+                    Serial.println(useMetricUnits ? "°C" : "°F");
                     Serial.print("[Weather] Condition: ");
                     Serial.println(currentCondition);
-                    Serial.print("[Weather] Humidity: ");
-                    Serial.print(humidity);
-                    Serial.println("%");
+                    Serial.print("[Weather] High ");
+                    Serial.print(highTemp);
+                    Serial.print(useMetricUnits ? "°C" : "°F");
+                    Serial.print(", Low ");
+                    Serial.print(lowTemp);
+                    Serial.println(useMetricUnits ? "°C" : "°F");
                     
                     // Log forecast data
                     Serial.println("[Weather] 5-day forecast:");
@@ -393,9 +396,10 @@ namespace Weather {
                             Serial.print(forecast[i].day);
                             Serial.print(": High ");
                             Serial.print(forecast[i].temp);
-                            Serial.print("°F, Low ");
+                            Serial.print(useMetricUnits ? "°C" : "°F");
+                            Serial.print(", Low ");
                             Serial.print(forecast[i].lowTemp);
-                            Serial.println("°F");
+                            Serial.println(useMetricUnits ? "°C" : "°F");
                         }
                     }
                     

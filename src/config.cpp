@@ -23,9 +23,10 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
 // OpenWeatherMap settings
 String API_KEY = "";
-const String UNITS = "imperial";  // Options: metric, imperial
+String UNITS = "imperial";  // Will be set dynamically based on useMetricUnits
 String cityName = "New York";   // Default city, configurable
 String stateName = "NY";        // Default state, configurable
+bool useMetricUnits = false;    // Default to Fahrenheit
 
 // Screen switching timing
 const unsigned long SCREEN_SWITCH_INTERVAL = 30000;

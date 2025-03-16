@@ -540,34 +540,17 @@ void handleSettings() {
   // Replace placeholders
   settingsHtml.replace("%CITY%", cityName);
   settingsHtml.replace("%STATE%", stateName);
-  settingsHtml.replace("%WIFI_SSID%", creds.ssid);
-  
-  // Create a string of asterisks matching the password length
-  String maskedPassword;
-  for (size_t i = 0; i < creds.password.length(); i++) {
-    maskedPassword += "*";
-  }
-  settingsHtml.replace("%WIFI_PASSWORD%", maskedPassword);
-  
-  // Format timezone as a string with correct precision for matching with JavaScript values
-  String tzStr;
-  if (timezone == (int)timezone) {
-    tzStr = String((int)timezone); // Use integer representation for whole numbers
-  } else {
-    tzStr = String(timezone, 1); // Use 1 decimal place for fractional timezones
-  }
-  settingsHtml.replace("%TIMEZONE%", tzStr);
-  
-  // Set time format selection
-  if (use12HourFormat) {
-    settingsHtml.replace("%12HOUR_SELECTED%", "selected");
-    settingsHtml.replace("%24HOUR_SELECTED%", "");
-  } else {
-    settingsHtml.replace("%12HOUR_SELECTED%", "");
-    settingsHtml.replace("%24HOUR_SELECTED%", "selected");
-  }
-  
+  settingsHtml.replace("%TIMEZONE%", String(timezone));
   settingsHtml.replace("%API_KEY%", API_KEY);
+  settingsHtml.replace("%WIFI_SSID%", WiFi.SSID());
+  
+  // Time format selection
+  settingsHtml.replace("%24HOUR_SELECTED%", use12HourFormat ? "" : "selected");
+  settingsHtml.replace("%12HOUR_SELECTED%", use12HourFormat ? "selected" : "");
+  
+  // Temperature unit selection
+  settingsHtml.replace("%FAHRENHEIT_SELECTED%", useMetricUnits ? "" : "selected");
+  settingsHtml.replace("%CELSIUS_SELECTED%", useMetricUnits ? "selected" : "");
   
   // Generate interval options
   String intervalOptions = "";
@@ -602,6 +585,7 @@ void handleSettingsSave() {
     float tz = server.arg("timezone").toFloat();
     String apiKey = server.hasArg("apikey") ? server.arg("apikey") : API_KEY;
     bool is12Hour = server.hasArg("timeFormat") && server.arg("timeFormat") == "1";
+    bool isMetric = server.hasArg("tempUnit") && server.arg("tempUnit") == "1";
     
     // Store the old API key to check if it changed
     String oldApiKey = API_KEY;
@@ -635,8 +619,12 @@ void handleSettingsSave() {
     Serial.print("Time format: ");
     Serial.println(is12Hour ? "12-hour" : "24-hour");
     
-    // Save settings and update use12HourFormat
-    saveSettings(city, state, interval, tz, apiKey, is12Hour);
+    // Log temperature unit change
+    Serial.print("Temperature unit: ");
+    Serial.println(isMetric ? "Celsius" : "Fahrenheit");
+    
+    // Save settings and update use12HourFormat and useMetricUnits
+    saveSettings(city, state, interval, tz, apiKey, is12Hour, isMetric);
     
     // Get timezone text for display
     String timezoneText = getTimezoneText(tz);
@@ -649,7 +637,8 @@ void handleSettingsSave() {
     successHtml.replace("%STATE%", state);
     successHtml.replace("%INTERVAL%", String(interval / 60000));
     successHtml.replace("%TIMEZONE_TEXT%", timezoneText);
-    successHtml.replace("%TIME_FORMAT%", is12Hour ? "12-hour with AM/PM" : "24-hour");
+    successHtml.replace("%TIME_FORMAT%", is12Hour ? "12-hour" : "24-hour");
+    successHtml.replace("%TEMP_UNIT%", isMetric ? "Celsius (°C)" : "Fahrenheit (°F)");
     
     // Mask API key for security - show first 4 and last 4 characters
     String maskedApiKey;
@@ -737,7 +726,15 @@ void loadSettings() {
   }
   
   // Load time format preference
-  byte timeFormatValue = EEPROM.read(TIME_FORMAT_OFFSET);
+  byte timeFormatByte = EEPROM.read(TIME_FORMAT_OFFSET);
+  use12HourFormat = (timeFormatByte == 1);
+  
+  // Load temperature unit preference
+  byte tempUnitByte = EEPROM.read(TEMP_UNIT_OFFSET);
+  useMetricUnits = (tempUnitByte == 1);
+  
+  // Update UNITS string based on temperature preference
+  UNITS = useMetricUnits ? "metric" : "imperial";
   
   EEPROM.end();
   
@@ -770,7 +767,13 @@ void loadSettings() {
   }
   
   // Set time format preference (default to 24-hour if invalid)
-  use12HourFormat = (timeFormatValue == 1);
+  use12HourFormat = (timeFormatByte == 1);
+  
+  // Set temperature unit preference (default to metric if invalid)
+  useMetricUnits = (tempUnitByte == 1);
+  
+  // Update UNITS string based on temperature preference
+  UNITS = useMetricUnits ? "metric" : "imperial";
   
   Serial.println("Settings loaded from EEPROM:");
   Serial.println("City: " + cityName);
@@ -781,7 +784,7 @@ void loadSettings() {
 }
 
 // Save settings to EEPROM
-void saveSettings(String city, String state, unsigned long updateInterval, float tz, String apiKey, bool is12Hour) {
+void saveSettings(String city, String state, unsigned long updateInterval, float tz, String apiKey, bool is12Hour, bool isMetric) {
   EEPROM.begin(EEPROM_SIZE);
   
   // Save city name
@@ -828,6 +831,9 @@ void saveSettings(String city, String state, unsigned long updateInterval, float
   // Save time format
   EEPROM.write(TIME_FORMAT_OFFSET, is12Hour ? 1 : 0);
   
+  // Save temperature unit
+  EEPROM.write(TEMP_UNIT_OFFSET, isMetric ? 1 : 0);
+  
   EEPROM.commit();
   EEPROM.end();
   
@@ -838,6 +844,10 @@ void saveSettings(String city, String state, unsigned long updateInterval, float
   timezone = tz;
   API_KEY = apiKey;
   use12HourFormat = is12Hour;
+  useMetricUnits = isMetric;
+  
+  // Update UNITS string based on temperature preference
+  UNITS = useMetricUnits ? "metric" : "imperial";
   
   Serial.println("Settings saved to EEPROM:");
   Serial.println("City: " + cityName);

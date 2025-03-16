@@ -237,6 +237,12 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
         <select id='state' name='state'>
         </select><br>
         
+        <label for='tempUnit'>Temperature Unit:</label>
+        <select id='tempUnit' name='tempUnit'>
+          <option value='0' %FAHRENHEIT_SELECTED%>Fahrenheit (°F)</option>
+          <option value='1' %CELSIUS_SELECTED%>Celsius (°C)</option>
+        </select><br>
+        
         <h2>Time Settings</h2>
         <label for='timezone'>Timezone:</label>
         <select id='timezone' name='timezone'>
@@ -303,6 +309,7 @@ const char SETTINGS_SAVE_SUCCESS_HTML[] PROGMEM = R"rawliteral(
     <p>Location: %CITY%, %STATE%</p>
     <p>Timezone: %TIMEZONE_TEXT%</p>
     <p>Time format: %TIME_FORMAT%</p>
+    <p>Temperature unit: %TEMP_UNIT%</p>
     <p>Update interval: %INTERVAL% minutes</p>
     <p>API Key: %API_KEY_MASKED%</p>
     <p>Weather data will be updated with new settings.</p>
