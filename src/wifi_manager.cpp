@@ -582,7 +582,26 @@ void handleSettingsSave() {
     String city = server.arg("city");
     String state = server.arg("state");
     unsigned long interval = server.arg("interval").toInt() * 60000; // Convert minutes to milliseconds
-    float tz = server.arg("timezone").toFloat();
+    
+    // Get timezone value and safely convert to float
+    String timezoneStr = server.arg("timezone");
+    float tz = -5.0f; // Default timezone
+    
+    // Properly parse the timezone value
+    if (timezoneStr.length() > 0) {
+      tz = timezoneStr.toFloat();
+      
+      // Validate timezone range
+      if (tz < -12.0f || tz > 14.0f) {
+        Serial.println("Invalid timezone value: " + timezoneStr + ", defaulting to -5.0");
+        tz = -5.0f;
+      } else {
+        Serial.println("Setting timezone to: " + String(tz));
+      }
+    } else {
+      Serial.println("Empty timezone value, defaulting to -5.0");
+    }
+    
     String apiKey = server.hasArg("apikey") ? server.arg("apikey") : API_KEY;
     bool is12Hour = server.hasArg("timeFormat") && server.arg("timeFormat") == "1";
     bool isMetric = server.hasArg("tempUnit") && server.arg("tempUnit") == "1";
@@ -601,12 +620,6 @@ void handleSettingsSave() {
     if (state.length() != 2) {
       state = "NY"; // Default if invalid
       Serial.println("Invalid state code provided, using default 'NY'");
-    }
-    
-    // Validate timezone
-    if (tz < -12 || tz > 14) {
-      tz = -5.0; // Default to Eastern Time if invalid
-      Serial.println("Invalid timezone provided, using default '-5'");
     }
     
     // Validate API key - must be at least 5 characters

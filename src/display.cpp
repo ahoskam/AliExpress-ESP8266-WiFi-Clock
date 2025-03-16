@@ -93,6 +93,24 @@ void drawTimeScreen() {
   int dateWidth = u8g2.getStrWidth(dateStr);
   u8g2.drawStr(64 - dateWidth / 2, 48, dateStr);
   
+  // Add AM/PM indicators in top right corner
+  u8g2.setFont(u8g2_font_4x6_tf);  // Use a very small font
+  bool isAM = (hours < 12);
+  
+  // Draw AM indicator
+  u8g2.drawStr(120, 8, "AM");
+  u8g2.drawCircle(114, 6, 2, U8G2_DRAW_ALL);
+  if (isAM) {
+    u8g2.drawDisc(114, 6, 2, U8G2_DRAW_ALL); // Fill circle for AM when it's AM
+  }
+  
+  // Draw PM indicator
+  u8g2.drawStr(120, 16, "PM");
+  u8g2.drawCircle(114, 14, 2, U8G2_DRAW_ALL);
+  if (!isAM) {
+    u8g2.drawDisc(114, 14, 2, U8G2_DRAW_ALL); // Fill circle for PM when it's PM
+  }
+  
   // Draw sun position bar (simplified version)
   int barStart = 24;
   int barEnd = 104;

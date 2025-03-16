@@ -195,11 +195,24 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
     
     const tzSelect = document.getElementById('timezone');
     const currentTz = '%TIMEZONE%';
-    timezones.forEach(tz => {
+    
+    // Find the closest match for the current timezone
+    let bestMatchIndex = 0;
+    let smallestDiff = 100;
+    
+    timezones.forEach((tz, index) => {
+      const diff = Math.abs(parseFloat(tz.value) - parseFloat(currentTz));
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        bestMatchIndex = index;
+      }
+    });
+    
+    timezones.forEach((tz, index) => {
       const option = document.createElement('option');
       option.value = tz.value;
       option.text = tz.text;
-      if (tz.value === currentTz) {
+      if (index === bestMatchIndex) {
         option.selected = true;
       }
       tzSelect.appendChild(option);
