@@ -13,7 +13,7 @@
 void setupNTP();
 
 // Update time from NTP server
-void updateTimeAndDate();
+bool updateTimeAndDate();
 
 // Update internal clock between NTP syncs
 void updateCurrentTime();

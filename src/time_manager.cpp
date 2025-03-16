@@ -44,11 +44,13 @@ bool shouldApplyDST(const struct tm* timeinfo) {
 }
 
 // Update time and date from NTP
-void updateTimeAndDate() {
+bool updateTimeAndDate() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Cannot update time - WiFi not connected");
-    return;
+    return false;
   }
+  
+  Serial.println("[Time] Attempting to update time from NTP server...");
   
   // Try to update time from NTP
   if (timeClient.update()) {
@@ -70,13 +72,13 @@ void updateTimeAndDate() {
       Serial.println("Applying DST adjustment (+1 hour)");
     }
     
-    // Debug timezone conversion
     Serial.print("UTC time: ");
     Serial.print(utcTime);
     Serial.print(" -> Local time with timezone ");
     Serial.print(timezone);
-    if (shouldApplyDst) Serial.print(" (with DST)");
-    Serial.print(": ");
+    Serial.print(" (");
+    Serial.print(shouldApplyDst ? "with" : "without");
+    Serial.print(" DST): ");
     Serial.println(localTime);
     
     // Convert to local time
@@ -126,8 +128,11 @@ void updateTimeAndDate() {
       Serial.print("+");
     }
     Serial.println(timezone);
+    
+    return true;
   } else {
     Serial.println("Failed to update time");
+    return false;
   }
 }
 
@@ -135,56 +140,57 @@ void updateTimeAndDate() {
 void updateCurrentTime() {
   if (!timeInitialized) return;
   
-  // Only update every second
-  if (millis() - lastSecondUpdate < 1000) return;
+  // Calculate how many seconds have passed
+  unsigned long currentMillis = millis();
+  unsigned long elapsedMs = currentMillis - lastSecondUpdate;
   
-  // Increment seconds
-  seconds++;
-  lastSecondUpdate = millis();
-  
-  // Update minutes and hours as needed
-  if (seconds >= 60) {
-    seconds = 0;
-    minutes++;
+  // Only update if at least one second has passed
+  if (elapsedMs >= 1000) {
+    // Calculate number of seconds that have elapsed
+    int secondsToAdd = elapsedMs / 1000;
     
-    if (minutes >= 60) {
-      minutes = 0;
-      hours++;
+    // Add the elapsed seconds
+    seconds += secondsToAdd;
+    
+    // Update the last second update time more precisely
+    lastSecondUpdate = currentMillis - (elapsedMs % 1000);
+    
+    // Update minutes and hours as needed
+    while (seconds >= 60) {
+      seconds -= 60;
+      minutes++;
       
-      // Update currentHour when hours change
-      currentHour = hours;
-      
-      if (hours >= 24) {
-        hours = 0;
-        // At midnight, we should sync with NTP again to handle date changes
-        // This is a simplification that doesn't handle date rollover correctly
-        updateTimeAndDate();
-      }
-      
-      // Log time at the top of each hour
-      Serial.print("Hour changed - Current time: ");
+      // Log the time every minute
+      Serial.print("[Time] Current time: ");
       Serial.print(hours);
       Serial.print(":");
-      Serial.print(minutes);
-      Serial.print(":");
-      Serial.println(seconds);
+      if (minutes < 10) Serial.print("0");
+      Serial.println(minutes);
+      
+      if (minutes >= 60) {
+        minutes = 0;
+        hours++;
+        
+        // Log the hour change
+        Serial.print("[Time] Hour changed to: ");
+        Serial.println(hours);
+        
+        if (hours >= 24) {
+          hours = 0;
+          // Log the day change
+          Serial.println("[Time] Day changed");
+          
+          // At midnight, we should sync with NTP again to handle date changes
+          bool success = updateTimeAndDate();
+          if (!success) {
+            Serial.println("[Time] Failed to update time at day change");
+          }
+        }
+      }
     }
-  }
-  
-  // Debug time info every 5 minutes
-  static int lastMinuteLogged = -1;
-  if (minutes % 5 == 0 && minutes != lastMinuteLogged) {
-    Serial.print("Current time: ");
-    Serial.print(hours);
-    Serial.print(":");
-    Serial.print(minutes);
-    Serial.print(":");
-    Serial.println(seconds);
     
-    Serial.print("Current hour: ");
-    Serial.println(currentHour);
-    
-    lastMinuteLogged = minutes;
+    // Update current hour for display
+    currentHour = hours;
   }
 }
 
@@ -243,7 +249,12 @@ void resetTimeWithNewTimezone() {
     timeClient.setTimeOffset(0); // We handle timezone manually
     
     // Force an update
-    updateTimeAndDate();
+    bool success = updateTimeAndDate();
+    if (success) {
+      Serial.println("Time reset successful with new timezone");
+    } else {
+      Serial.println("Time reset failed with new timezone");
+    }
   } else {
     Serial.println("Cannot reset time - WiFi not connected");
   }

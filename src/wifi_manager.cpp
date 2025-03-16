@@ -357,7 +357,6 @@ void startConfigPortal() {
   server.begin();
   
   Serial.println("Configuration Portal Started");
-  Serial.printf("SSID: %s, Password: %s\n", AP_NAME, AP_PASSWORD);
   Serial.printf("IP address: %s\n", apIP.toString().c_str());
   
   // Show configuration mode on display
@@ -439,9 +438,8 @@ void handleSave() {
     String ssid = server.arg("ssid");
     String password = server.arg("password");
     
-    // Debug output
-    Serial.println("Saving WiFi configuration:");
-    Serial.printf("SSID: '%s', Password length: %d\n", ssid.c_str(), password.length());
+    // Debug info
+    Serial.println("\n=== Saving WiFi Credentials ===");
     
     // Show saving on display
     drawConnectingScreen("Saving credentials", "Please wait...");
@@ -538,7 +536,6 @@ void handleSettings() {
   
   Serial.println("\n=== Handling Settings Page Request ===");
   Serial.printf("SSID to display: '%s'\n", creds.ssid.c_str());
-  Serial.printf("Password length to display: %d\n", creds.password.length());
   
   // Replace placeholders
   settingsHtml.replace("%CITY%", cityName);

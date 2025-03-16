@@ -108,9 +108,6 @@ namespace Weather {
             delay(3000);
         }
         
-        Serial.println("Original city name: '" + cityName + "', length: " + String(cityName.length()));
-        Serial.println("Original state name: '" + stateName + "', length: " + String(stateName.length()));
-        
         // Sanitize city and state names
         String cleanCity = cityName;
         String cleanState = stateName;
@@ -182,31 +179,11 @@ namespace Weather {
         String currentUrl = "http://api.openweathermap.org/data/2.5/weather?q=" + 
                            encodedCity + "," + encodedState + ",US&units=" + UNITS + "&appid=" + API_KEY;
         
-        Serial.println("Fetching current weather...");
-        Serial.print("City: '");
-        Serial.print(cleanCity);
-        Serial.println("'");
-        Serial.print("State: '");
-        Serial.print(cleanState);
-        Serial.println("'");
-        Serial.print("Encoded City: '");
-        Serial.print(encodedCity);
-        Serial.println("'");
-        Serial.println("URL: " + currentUrl);
-        
         http.begin(client, currentUrl);
         int httpCode = http.GET();
         
-        Serial.print("HTTP Result Code: ");
-        Serial.println(httpCode);
-        
         if (httpCode == 200) {
             String payload = http.getString();
-            Serial.println("Current weather received");
-            
-            // Log the full response for debugging
-            Serial.println("Full current weather response:");
-            Serial.println(payload);
             
             // Parse JSON using ArduinoJson with specified capacity
             StaticJsonDocument<CURRENT_WEATHER_JSON_SIZE> doc;
@@ -245,7 +222,6 @@ namespace Weather {
                     if (shouldApplyDst && timezone < 0) {  // Only apply to US timezones
                         sunriseTime += 3600;  // Add an hour for DST
                         sunsetTime += 3600;   // Add an hour for DST
-                        Serial.println("Applying DST adjustment (+1 hour) to sunrise/sunset times");
                     }
                     
                     // Convert to hours and minutes
@@ -254,12 +230,7 @@ namespace Weather {
                     sunsetHour = (sunsetTime / 3600) % 24;
                     sunsetMinute = (sunsetTime / 60) % 60;
                     
-                    Serial.println("Sunrise (UTC): " + String(sunriseTimestamp) + 
-                                 " -> Local: " + String(sunriseHour) + ":" + String(sunriseMinute));
-                    Serial.println("Sunset (UTC): " + String(sunsetTimestamp) + 
-                                 " -> Local: " + String(sunsetHour) + ":" + String(sunsetMinute));
                 } else {
-                    Serial.println("Warning: Could not find sunrise/sunset times");
                     // Use defaults
                     sunriseHour = 6;
                     sunriseMinute = 0;
@@ -267,26 +238,14 @@ namespace Weather {
                     sunsetMinute = 0;
                 }
                 
-                Serial.println("Current temp: " + String(currentTemp) + "°F");
-                Serial.println("Condition: " + currentCondition);
-                Serial.println("Sunrise: " + String(sunriseHour) + ":" + String(sunriseMinute));
-                Serial.println("Sunset: " + String(sunsetHour) + ":" + String(sunsetMinute));
-                
                 http.end();
                 
                 // Now fetch forecast data using a more memory-efficient approach
-                // Based on your previous working code
                 String forecastUrl = "http://api.openweathermap.org/data/2.5/forecast?q=" + 
                                      encodedCity + "," + encodedState + ",US&units=" + UNITS + "&appid=" + API_KEY;
                 
-                Serial.println("Fetching forecast...");
                 http.begin(client, forecastUrl);
                 httpCode = http.GET();
-                
-                // Log the forecast URL and HTTP code
-                Serial.println("Forecast URL: " + forecastUrl);
-                Serial.print("Forecast HTTP Result Code: ");
-                Serial.println(httpCode);
                 
                 if (httpCode == 200) {
                     // Get current day info with proper timezone adjustment
@@ -295,8 +254,6 @@ namespace Weather {
                     
                     // Debug stream availability before we start
                     WiFiClient* stream = http.getStreamPtr();
-                    Serial.print("Stream available bytes: ");
-                    Serial.println(stream->available());
                     
                     // Create a document for parsing with appropriate size
                     StaticJsonDocument<FORECAST_JSON_SIZE> doc;
@@ -311,10 +268,7 @@ namespace Weather {
                         return false;
                     }
                     
-                    Serial.println("JSON parsed successfully");
                     JsonArray list = doc["list"];
-                    Serial.print("Number of entries in list: ");
-                    Serial.println(list.size());
                     
                     // Get current day info for date calculations
                     struct tm* currentTime = gmtime(&localNow);
@@ -323,16 +277,6 @@ namespace Weather {
                     int todayYear = currentTime->tm_year;
                     int todayDayOfWeek = currentTime->tm_wday;
                     
-                    // Debug current date
-                    Serial.print("Today's date: ");
-                    Serial.print(todayDate);
-                    Serial.print("/");
-                    Serial.print(todayMonth + 1);
-                    Serial.print("/");
-                    Serial.print(todayYear + 1900);
-                    Serial.print(", Day of week: ");
-                    Serial.println(getDayOfWeekShort(todayDayOfWeek));
-                    
                     // Initialize forecast array
                     for (int i = 0; i < 5; i++) {
                         int futureDayOfWeek = (todayDayOfWeek + (i + 1)) % 7;
@@ -340,11 +284,6 @@ namespace Weather {
                         forecast[i].temp = -999; // Initialize to NA
                         forecast[i].lowTemp = -999;
                         forecast[i].iconType = 0;
-                        
-                        Serial.print("Pre-initialized forecast day ");
-                        Serial.print(i);
-                        Serial.print(": ");
-                        Serial.println(forecast[i].day);
                     }
                     
                     // Track highest and lowest temperature for each day
@@ -418,13 +357,6 @@ namespace Weather {
                         if (temp < minTempForDay[forecastIndex]) {
                             minTempForDay[forecastIndex] = temp;
                         }
-                        
-                        Serial.print("Forecast entry for day ");
-                        Serial.print(forecastIndex);
-                        Serial.print(": temp=");
-                        Serial.print(temp);
-                        Serial.print("°F, condition=");
-                        Serial.println(entry["weather"][0]["main"].as<const char*>());
                     }
                     
                     // Update forecast array with the highest and lowest temperatures
@@ -436,20 +368,37 @@ namespace Weather {
                             if (minTempForDay[i] < 999) {
                                 forecast[i].lowTemp = round(minTempForDay[i]);
                             }
-                            
-                            Serial.print("Final forecast for ");
-                            Serial.print(forecast[i].day);
-                            Serial.print(": ");
-                            Serial.print(forecast[i].temp);
-                            Serial.print("°F (High), ");
-                            Serial.print(forecast[i].lowTemp);
-                            Serial.print("°F (Low), Icon: ");
-                            Serial.println(forecast[i].iconType);
                         }
                     }
                     
                     lastWeatherUpdate = millis();
                     http.end();
+                    
+                    // Log successful weather update with details
+                    Serial.println("[Weather] Weather data successfully retrieved");
+                    Serial.print("[Weather] Current temperature: ");
+                    Serial.print(currentTemp);
+                    Serial.println("°F");
+                    Serial.print("[Weather] Condition: ");
+                    Serial.println(currentCondition);
+                    Serial.print("[Weather] Humidity: ");
+                    Serial.print(humidity);
+                    Serial.println("%");
+                    
+                    // Log forecast data
+                    Serial.println("[Weather] 5-day forecast:");
+                    for (int i = 0; i < 5; i++) {
+                        if (forecast[i].temp > -999) {
+                            Serial.print("  ");
+                            Serial.print(forecast[i].day);
+                            Serial.print(": High ");
+                            Serial.print(forecast[i].temp);
+                            Serial.print("°F, Low ");
+                            Serial.print(forecast[i].lowTemp);
+                            Serial.println("°F");
+                        }
+                    }
+                    
                     return true;
                 } else {
                     Serial.print("Forecast HTTP error: ");

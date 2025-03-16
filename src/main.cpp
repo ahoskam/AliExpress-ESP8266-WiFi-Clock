@@ -155,12 +155,21 @@ void setup() {
     
     // Get current time
     drawConnectingScreen("Updating", "time & date");
-    updateTimeAndDate();
+    bool timeSuccess = updateTimeAndDate();
+    if (!timeSuccess) {
+      Serial.println("[Time] Initial time update failed, will retry later");
+    } else {
+      Serial.println("[Time] Initial time update successful");
+      timeInitialized = true;
+      lastSecondUpdate = millis();
+    }
     
     // Fetch weather data
-    Serial.println("\n----- Weather Data -----");
     drawConnectingScreen("Fetching", "weather data");
-    Weather::fetchWeatherData();
+    bool weatherSuccess = Weather::fetchWeatherData();
+    if (!weatherSuccess) {
+      Serial.println("[Weather] Initial weather update failed, will retry later");
+    }
   } else {
     Serial.println("WiFi not connected after initialization");
   }
@@ -219,41 +228,63 @@ void loop() {
     if (!initialSetupDone) {
       Serial.println("Connection established - performing initial setup");
       
-      // Setup NTP
-      drawConnectingScreen("Setting up", "NTP time sync");
-      setupNTP();
-      
-      // Get time
-      drawConnectingScreen("Updating", "time & date");
-      updateTimeAndDate();
-      lastTimeUpdate = millis();
+      // Skip NTP setup and time update since it was already done in setup()
       
       // Get weather
       drawConnectingScreen("Fetching", "weather data");
-      Weather::fetchWeatherData();
+      bool weatherSuccess = Weather::fetchWeatherData();
+      if (!weatherSuccess) {
+        Serial.println("[Weather] Initial weather update failed, will retry later");
+      }
       
       initialSetupDone = true;
+      // Initialize lastTimeUpdate to current time so we don't immediately trigger another update
+      lastTimeUpdate = millis();
     }
     
     // Clock updates
     updateCurrentTime();
     
-    // Periodic NTP time update every hour
-    if (millis() - lastTimeUpdate >= 60 * 60 * 1000) {
-      updateTimeAndDate();
+    // Periodic NTP time update every 30 minutes
+    if (millis() - lastTimeUpdate >= 30 * 60 * 1000) {
+      Serial.println("[Time] Time update initiated...");
+      bool timeUpdateSuccess = updateTimeAndDate();
+      if (timeUpdateSuccess) {
+        Serial.println("[Time] Time update successful");
+        // Format time and date strings for display
+        char timeStr[9];
+        sprintf(timeStr, "%02d:%02d:%02d", hours, minutes, seconds);
+        
+        char dateStr[20];
+        sprintf(dateStr, "%s %s %d, %d", dayOfWeekStr.c_str(), monthStr.c_str(), dayOfMonth, year);
+        
+        Serial.print("[Time] Current time: ");
+        Serial.print(timeStr);
+        Serial.print(" ");
+        Serial.println(dateStr);
+      } else {
+        Serial.println("[Time] Time update failed");
+      }
       lastTimeUpdate = millis();
     }
     
     // Weather update when needed
     if (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL) {
-      Serial.println("[Weather] Updating weather data...");
-      Weather::fetchWeatherData();
+      Serial.println("[Weather] Weather update initiated...");
+      bool weatherUpdateSuccess = Weather::fetchWeatherData();
+      if (weatherUpdateSuccess) {
+        Serial.println("[Weather] Weather update successful");
+        Serial.println("[Weather] Current temp: " + String(currentTemp) + "°F, Condition: " + currentCondition);
+      } else {
+        Serial.println("[Weather] Weather update failed");
+      }
     }
     
     // Periodic WiFi check
     if (millis() - lastWifiCheck >= 30000) {
       // Just update the timestamp - connection is good
       lastWifiCheck = millis();
+      Serial.println("[WiFi] Connection check: Connected to " + WiFi.SSID() + " (" + WiFi.localIP().toString() + ")");
     }
   }
   // Not connected - try to reconnect
