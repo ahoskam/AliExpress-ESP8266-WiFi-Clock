@@ -544,9 +544,13 @@ void handleSettings() {
   settingsHtml.replace("%API_KEY%", API_KEY);
   settingsHtml.replace("%WIFI_SSID%", WiFi.SSID());
   
-  // Time format selection
+  // Set time format selection
   settingsHtml.replace("%24HOUR_SELECTED%", use12HourFormat ? "" : "selected");
   settingsHtml.replace("%12HOUR_SELECTED%", use12HourFormat ? "selected" : "");
+  
+  // Set DST selection
+  settingsHtml.replace("%DST_OFF_SELECTED%", useDST ? "" : "selected");
+  settingsHtml.replace("%DST_ON_SELECTED%", useDST ? "selected" : "");
   
   // Temperature unit selection
   settingsHtml.replace("%FAHRENHEIT_SELECTED%", useMetricUnits ? "" : "selected");
@@ -578,113 +582,164 @@ void handleSettings() {
 
 // Handle settings save request
 void handleSettingsSave() {
-  if (server.hasArg("city") && server.hasArg("state") && server.hasArg("interval") && server.hasArg("timezone")) {
-    String city = server.arg("city");
-    String state = server.arg("state");
-    unsigned long interval = server.arg("interval").toInt() * 60000; // Convert minutes to milliseconds
-    
-    // Get timezone value and safely convert to float
-    String timezoneStr = server.arg("timezone");
-    float tz = -5.0f; // Default timezone
-    
-    // Properly parse the timezone value
-    if (timezoneStr.length() > 0) {
-      tz = timezoneStr.toFloat();
-      
-      // Validate timezone range
-      if (tz < -12.0f || tz > 14.0f) {
-        Serial.println("Invalid timezone value: " + timezoneStr + ", defaulting to -5.0");
-        tz = -5.0f;
-      } else {
-        Serial.println("Setting timezone to: " + String(tz));
-      }
-    } else {
-      Serial.println("Empty timezone value, defaulting to -5.0");
-    }
-    
-    String apiKey = server.hasArg("apikey") ? server.arg("apikey") : API_KEY;
-    bool is12Hour = server.hasArg("timeFormat") && server.arg("timeFormat") == "1";
-    bool isMetric = server.hasArg("tempUnit") && server.arg("tempUnit") == "1";
-    
-    // Store the old API key to check if it changed
-    String oldApiKey = API_KEY;
-    bool apiKeyChanged = (apiKey.length() >= 5 && apiKey != oldApiKey);
-    
-    // Validate city name
-    if (city.length() == 0) {
-      city = "New York"; // Default if empty
-      Serial.println("Empty city name provided, using default 'New York'");
-    }
-    
-    // Validate state code
-    if (state.length() != 2) {
-      state = "NY"; // Default if invalid
-      Serial.println("Invalid state code provided, using default 'NY'");
-    }
-    
-    // Validate API key - must be at least 5 characters
-    if (apiKey.length() < 5) {
-      apiKey = API_KEY; // Keep using current key if invalid
-      Serial.println("Invalid API key provided, keeping current API key");
-    }
-    
-    // Log time format change
-    Serial.print("Time format: ");
-    Serial.println(is12Hour ? "12-hour" : "24-hour");
-    
-    // Log temperature unit change
-    Serial.print("Temperature unit: ");
-    Serial.println(isMetric ? "Celsius" : "Fahrenheit");
-    
-    // Save settings and update use12HourFormat and useMetricUnits
-    saveSettings(city, state, interval, tz, apiKey, is12Hour, isMetric);
-    
-    // Get timezone text for display
-    String timezoneText = getTimezoneText(tz);
-    
-    String html = FPSTR(HTML_HEADER);
-    String successHtml = FPSTR(SETTINGS_SAVE_SUCCESS_HTML);
-    
-    // Replace placeholders
-    successHtml.replace("%CITY%", city);
-    successHtml.replace("%STATE%", state);
-    successHtml.replace("%INTERVAL%", String(interval / 60000));
-    successHtml.replace("%TIMEZONE_TEXT%", timezoneText);
-    successHtml.replace("%TIME_FORMAT%", is12Hour ? "12-hour" : "24-hour");
-    successHtml.replace("%TEMP_UNIT%", isMetric ? "Celsius (°C)" : "Fahrenheit (°F)");
-    
-    // Mask API key for security - show first 4 and last 4 characters
-    String maskedApiKey;
-    if (apiKey.length() > 8) {
-      maskedApiKey = apiKey.substring(0, 4) + "********" + apiKey.substring(apiKey.length() - 4);
-    } else {
-      maskedApiKey = "********"; // If API key is too short to mask properly
-    }
-    successHtml.replace("%API_KEY_MASKED%", maskedApiKey);
-    
-    html += successHtml;
-    server.send(200, "text/html", html);
-    
-    // Force an immediate weather update with new settings
-    lastWeatherUpdate = 0;
-    
-    // Force time update with new timezone
-    lastTimeUpdate = 0;
-    
-    // Immediately update the time with the new timezone
-    if (WiFi.status() == WL_CONNECTED) {
-      resetTimeWithNewTimezone();
-      
-      // If API key was changed and is valid, fetch weather data immediately
-      if (apiKeyChanged) {
-        Serial.println("New API key detected - fetching weather data immediately");
-        drawConnectingScreen("New API Key", "Fetching weather...");
-        Weather::fetchWeatherData();
-      }
-    }
-  } else {
-    server.send(400, "text/plain", "Missing required parameters");
+  Serial.println("[Settings] Processing settings form submission");
+  
+  // Extract form values
+  cityName = server.arg("city");
+  stateName = server.arg("state");
+  
+  // Process temperature unit selection
+  useMetricUnits = (server.arg("tempUnit") == "1");
+  UNITS = useMetricUnits ? "metric" : "imperial";
+  
+  // Process timezone selection
+  String timezoneStr = server.arg("timezone");
+  timezone = timezoneStr.toFloat();
+  
+  // Process DST setting
+  useDST = (server.arg("dst") == "1");
+  
+  // Process time format selection
+  use12HourFormat = (server.arg("timeFormat") == "1");
+  
+  // Get API key
+  String apiKey = server.hasArg("apikey") ? server.arg("apikey") : API_KEY;
+  
+  // Validate city name
+  if (cityName.length() == 0) {
+    cityName = "New York"; // Default if empty
+    Serial.println("Empty city name provided, using default 'New York'");
   }
+  
+  // Validate state code
+  if (stateName.length() != 2) {
+    stateName = "NY"; // Default if invalid
+    Serial.println("Invalid state code provided, using default 'NY'");
+  }
+  
+  // Validate API key - must be at least 5 characters
+  if (apiKey.length() < 5) {
+    apiKey = API_KEY; // Keep using current key if invalid
+    Serial.println("Invalid API key provided, keeping current API key");
+  }
+  
+  // Log time format change
+  Serial.print("Time format: ");
+  Serial.println(use12HourFormat ? "12-hour" : "24-hour");
+  
+  // Log temperature unit change
+  Serial.print("Temperature unit: ");
+  Serial.println(useMetricUnits ? "Celsius" : "Fahrenheit");
+  
+  // Start EEPROM transaction
+  EEPROM.begin(EEPROM_SIZE);
+  
+  // Save city name
+  for (size_t i = 0; i < 50; i++) {
+    if (i < cityName.length()) {
+      EEPROM.write(CITY_OFFSET + i, cityName[i]);
+    } else {
+      EEPROM.write(CITY_OFFSET + i, 0);
+    }
+  }
+  
+  // Save state code
+  for (size_t i = 0; i < 2; i++) {
+    if (i < stateName.length()) {
+      EEPROM.write(STATE_OFFSET + i, stateName[i]);
+    } else {
+      EEPROM.write(STATE_OFFSET + i, 0);
+    }
+  }
+  
+  // Save update interval
+  byte intervalBytes[4];
+  memcpy(intervalBytes, &WEATHER_UPDATE_INTERVAL, 4);
+  for (int i = 0; i < 4; i++) {
+    EEPROM.write(UPDATE_INTERVAL_OFFSET + i, intervalBytes[i]);
+  }
+  
+  // Save timezone
+  byte timezoneBytes[4];
+  memcpy(timezoneBytes, &timezone, 4);
+  for (int i = 0; i < 4; i++) {
+    EEPROM.write(TIMEZONE_OFFSET + i, timezoneBytes[i]);
+  }
+  
+  // Save API key
+  for (size_t i = 0; i < 50; i++) {
+    if (i < apiKey.length()) {
+      EEPROM.write(API_KEY_OFFSET + i, apiKey[i]);
+    } else {
+      EEPROM.write(API_KEY_OFFSET + i, 0);
+    }
+  }
+  
+  // Save time format
+  EEPROM.write(TIME_FORMAT_OFFSET, use12HourFormat ? 1 : 0);
+  
+  // Save temperature unit
+  EEPROM.write(TEMP_UNIT_OFFSET, useMetricUnits ? 1 : 0);
+  
+  // Save DST setting
+  EEPROM.write(USE_DST_OFFSET, useDST ? 1 : 0);
+  
+  EEPROM.commit();
+  EEPROM.end();
+  
+  // Update global variables
+  WEATHER_UPDATE_INTERVAL = WEATHER_UPDATE_INTERVAL;
+  timezone = timezone;
+  API_KEY = apiKey;
+  use12HourFormat = use12HourFormat;
+  useMetricUnits = useMetricUnits;
+  useDST = useDST;
+  
+  Serial.println("Settings saved to EEPROM:");
+  Serial.println("City: " + cityName);
+  Serial.println("State: " + stateName);
+  Serial.println("Update interval: " + String(WEATHER_UPDATE_INTERVAL / 60000) + " minutes");
+  Serial.println("Timezone: " + String(timezone) + " (UTC" + (timezone >= 0 ? "+" : "") + String(timezone) + ")");
+  Serial.println("Time format: " + String(use12HourFormat ? "12-hour" : "24-hour"));
+  Serial.print("Temperature unit: ");
+  Serial.println(useMetricUnits ? "Celsius" : "Fahrenheit");
+  Serial.println("DST enabled: " + String(useDST ? "YES" : "NO"));
+  
+  // Immediately update the time with the new timezone
+  if (WiFi.status() == WL_CONNECTED) {
+    // Reset and immediately update the time with new timezone and DST settings
+    resetTimeWithNewTimezone();
+    
+    // Always update weather data immediately when settings are saved
+    Serial.println("Settings changed - fetching weather data immediately");
+    drawConnectingScreen("Updating", "Weather data...");
+    Weather::fetchWeatherData();
+    
+    // Force time update with new settings
+    Serial.println("Settings changed - updating time immediately");
+    drawConnectingScreen("Updating", "Time data...");
+    updateTimeAndDate();
+  }
+  
+  // Send success response
+  String successHtml = FPSTR(SETTINGS_SAVE_SUCCESS_HTML);
+  successHtml.replace("%CITY%", cityName);
+  successHtml.replace("%STATE%", stateName);
+  successHtml.replace("%INTERVAL%", String(WEATHER_UPDATE_INTERVAL / 60000));
+  successHtml.replace("%TIMEZONE_TEXT%", getTimezoneText(timezone));
+  successHtml.replace("%TIME_FORMAT%", use12HourFormat ? "12-hour" : "24-hour");
+  successHtml.replace("%TEMP_UNIT%", useMetricUnits ? "Celsius (°C)" : "Fahrenheit (°F)");
+  
+  // Mask API key for security - show first 4 and last 4 characters
+  String maskedApiKey;
+  if (apiKey.length() > 8) {
+    maskedApiKey = apiKey.substring(0, 4) + "********" + apiKey.substring(apiKey.length() - 4);
+  } else {
+    maskedApiKey = "********"; // If API key is too short to mask properly
+  }
+  successHtml.replace("%API_KEY_MASKED%", maskedApiKey);
+  
+  server.send(200, "text/html", successHtml);
 }
 
 // Helper function to get timezone text
@@ -704,6 +759,8 @@ String getTimezoneText(float tz) {
 
 // Load settings from EEPROM
 void loadSettings() {
+  Serial.println("[Settings] Loading settings from EEPROM");
+  
   EEPROM.begin(EEPROM_SIZE);
   
   // Load city name
@@ -745,6 +802,11 @@ void loadSettings() {
   // Load temperature unit preference
   byte tempUnitByte = EEPROM.read(TEMP_UNIT_OFFSET);
   useMetricUnits = (tempUnitByte == 1);
+  
+  // Load DST setting
+  useDST = (EEPROM.read(USE_DST_OFFSET) == 1);
+  Serial.print("[Settings] DST enabled: ");
+  Serial.println(useDST ? "YES" : "NO");
   
   // Update UNITS string based on temperature preference
   UNITS = useMetricUnits ? "metric" : "imperial";
@@ -794,79 +856,9 @@ void loadSettings() {
   Serial.println("Update interval: " + String(WEATHER_UPDATE_INTERVAL / 60000) + " minutes");
   Serial.println("Timezone: " + String(timezone) + " (UTC" + (timezone >= 0 ? "+" : "") + String(timezone) + ")");
   Serial.println("Time format: " + String(use12HourFormat ? "12-hour" : "24-hour"));
-}
-
-// Save settings to EEPROM
-void saveSettings(String city, String state, unsigned long updateInterval, float tz, String apiKey, bool is12Hour, bool isMetric) {
-  EEPROM.begin(EEPROM_SIZE);
-  
-  // Save city name
-  for (size_t i = 0; i < 50; i++) {
-    if (i < city.length()) {
-      EEPROM.write(CITY_OFFSET + i, city[i]);
-    } else {
-      EEPROM.write(CITY_OFFSET + i, 0);
-    }
-  }
-  
-  // Save state code
-  for (size_t i = 0; i < 2; i++) {
-    if (i < state.length()) {
-      EEPROM.write(STATE_OFFSET + i, state[i]);
-    } else {
-      EEPROM.write(STATE_OFFSET + i, 0);
-    }
-  }
-  
-  // Save update interval
-  byte intervalBytes[4];
-  memcpy(intervalBytes, &updateInterval, 4);
-  for (int i = 0; i < 4; i++) {
-    EEPROM.write(UPDATE_INTERVAL_OFFSET + i, intervalBytes[i]);
-  }
-  
-  // Save timezone
-  byte timezoneBytes[4];
-  memcpy(timezoneBytes, &tz, 4);
-  for (int i = 0; i < 4; i++) {
-    EEPROM.write(TIMEZONE_OFFSET + i, timezoneBytes[i]);
-  }
-  
-  // Save API key
-  for (size_t i = 0; i < 50; i++) {
-    if (i < apiKey.length()) {
-      EEPROM.write(API_KEY_OFFSET + i, apiKey[i]);
-    } else {
-      EEPROM.write(API_KEY_OFFSET + i, 0);
-    }
-  }
-  
-  // Save time format
-  EEPROM.write(TIME_FORMAT_OFFSET, is12Hour ? 1 : 0);
-  
-  // Save temperature unit
-  EEPROM.write(TEMP_UNIT_OFFSET, isMetric ? 1 : 0);
-  
-  EEPROM.commit();
-  EEPROM.end();
-  
-  // Update global variables
-  cityName = city;
-  stateName = state;
-  WEATHER_UPDATE_INTERVAL = updateInterval;
-  timezone = tz;
-  API_KEY = apiKey;
-  use12HourFormat = is12Hour;
-  useMetricUnits = isMetric;
-  
-  // Update UNITS string based on temperature preference
-  UNITS = useMetricUnits ? "metric" : "imperial";
-  
-  Serial.println("Settings saved to EEPROM:");
-  Serial.println("City: " + cityName);
-  Serial.println("State: " + stateName);
-  Serial.println("Update interval: " + String(WEATHER_UPDATE_INTERVAL / 60000) + " minutes");
-  Serial.println("Timezone: " + String(timezone) + " (UTC" + (timezone >= 0 ? "+" : "") + String(timezone) + ")");
+  Serial.print("Temperature unit: ");
+  Serial.println(useMetricUnits ? "Celsius" : "Fahrenheit");
+  Serial.println("DST enabled: " + String(useDST ? "YES" : "NO"));
 }
 
 // Draw the connecting screen with progress

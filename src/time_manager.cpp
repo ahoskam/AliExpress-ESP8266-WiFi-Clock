@@ -52,264 +52,113 @@ bool updateTimeAndDate() {
   
   Serial.println("[Time] Attempting to update time from NTP server...");
   
-  // Try to update time from NTP with precise timing
-  if (timeClient.update()) {
-    // Get UTC time
-    time_t utcTime = timeClient.getEpochTime();
-    int currentSecond = timeClient.getSeconds();
-    
-    Serial.print("[Time] NTP Response - Epoch: ");
-    Serial.print(utcTime);
-    Serial.print(", Current second: ");
-    Serial.println(currentSecond);
-    
-    // Implement precise synchronization
-    // Wait until the start of the next second
-    bool performPreciseSync = true;
-    int startSecond = currentSecond;
-    
-    // Only do this if we're not too close to a second boundary already
-    if (currentSecond < 58) { // Don't try if we're close to a minute boundary
-      Serial.println("[Time] Performing precise synchronization to second boundary");
-      
-      // Wait for the next second to start
-      while (timeClient.getSeconds() == startSecond) {
-        delay(10);
-      }
-      
-      // Now we're at the exact start of a new second
-      Serial.println("[Time] Precise synchronization complete");
-      lastSecondUpdate = millis(); // Update timestamp precisely at second boundary
-      
-      // Get new time after sync
-      utcTime = timeClient.getEpochTime();
-    } else {
-      performPreciseSync = false;
-      Serial.println("[Time] Skipping precise sync (too close to minute boundary)");
-    }
-    
-    // If we have a previous sync, calculate drift
-    if (lastNtpTimestamp > 0 && lastNtpMillis > 0) {
-      unsigned long expectedElapsedSeconds = utcTime - lastNtpTimestamp;
-      unsigned long actualElapsedMillis = millis() - lastNtpMillis;
-      
-      // Only calculate drift if reasonable time has passed (at least 5 minutes)
-      if (expectedElapsedSeconds > 300) {
-        // Convert expected seconds to milliseconds
-        unsigned long expectedElapsedMillis = expectedElapsedSeconds * 1000;
-        
-        // Calculate drift in milliseconds
-        long currentDrift = actualElapsedMillis - expectedElapsedMillis;
-        
-        // Convert to hourly drift rate (milliseconds per hour)
-        // 3600 seconds in an hour
-        float hoursElapsed = expectedElapsedSeconds / 3600.0;
-        if (hoursElapsed > 0) {
-          long driftPerHour = (long)(currentDrift / hoursElapsed);
-          
-          // Update the drift correction value with some smoothing
-          // Give more weight to the new measurement (75%) and less to the old one (25%)
-          driftCorrection = (driftPerHour * 3 + driftCorrection) / 4;
-          
-          Serial.print("[Time] Calculated drift: ");
-          Serial.print(currentDrift);
-          Serial.print(" ms over ");
-          Serial.print(hoursElapsed);
-          Serial.print(" hours (");
-          Serial.print(driftPerHour);
-          Serial.println(" ms/hour)");
-          
-          Serial.print("[Time] Updated drift correction: ");
-          Serial.print(driftCorrection);
-          Serial.println(" ms/hour");
-        }
-      }
-    }
-    
-    // Save current timestamp and millis for future drift calculation
-    lastNtpTimestamp = utcTime;
-    lastNtpMillis = millis();
-    
-    // Apply timezone offset (convert to seconds)
-    time_t localTime = utcTime + (timezone * 3600);
-    
-    // Convert UTC time to tm structure for DST check
-    struct tm *utcTm = gmtime(&utcTime);
-    
-    // Check if DST should be applied (for US timezones)
-    bool shouldApplyDst = shouldApplyDST(utcTm);
-    
-    // Apply DST if needed (add 1 hour = 3600 seconds)
-    if (shouldApplyDst && timezone < 0) {  // Only apply to US timezones (negative values)
-      localTime += 3600;
-      Serial.println("Applying DST adjustment (+1 hour)");
-    }
-    
-    Serial.print("UTC time: ");
-    Serial.print(utcTime);
-    Serial.print(" -> Local time with timezone ");
-    Serial.print(timezone);
-    Serial.print(" (");
-    Serial.print(shouldApplyDst ? "with" : "without");
-    Serial.print(" DST): ");
-    Serial.println(localTime);
-    
-    // Convert to local time
-    struct tm * ti;
-    ti = gmtime(&localTime); // Use gmtime since we've already applied the offset
-    
-    // Update all time variables
-    hours = ti->tm_hour;
-    minutes = ti->tm_min;
-    seconds = ti->tm_sec;
-    
-    // If we did precise sync, use the second value we know is accurate
-    if (performPreciseSync) {
-      seconds = timeClient.getSeconds();
-    }
-    
-    dayOfMonth = ti->tm_mday;
-    month = ti->tm_mon + 1; // tm_mon is 0-based
-    year = ti->tm_year + 1900;
-    
-    // Get day of week (0 = Sunday, 1 = Monday, etc.)
-    int dayOfWeek = ti->tm_wday;
-    
-    // Convert to string representations
-    dayOfWeekStr = getDayOfWeekShort(dayOfWeek);
-    monthStr = getMonthShort(month);
-    
-    currentHour = hours;
-    
-    timeInitialized = true;
-    // lastSecondUpdate is already set if we did precise sync
-    if (!performPreciseSync) {
-      lastSecondUpdate = millis();
-    }
-    lastTimeUpdate = millis();
-    
-    // Print time information using separate print statements
-    Serial.print("Time updated: ");
-    Serial.print(hours);
-    Serial.print(":");
-    Serial.print(minutes);
-    Serial.print(":");
-    Serial.print(seconds);
-    Serial.print(" ");
-    Serial.print(dayOfWeekStr);
-    Serial.print(" ");
-    Serial.print(monthStr);
-    Serial.print(" ");
-    Serial.print(dayOfMonth);
-    Serial.print(", ");
-    Serial.println(year);
-    
-    // Print timezone information using separate print statements
-    Serial.print("Timezone offset: UTC");
-    if (timezone >= 0) {
-      Serial.print("+");
-    }
-    Serial.println(timezone);
-    
-    return true;
-  } else {
-    Serial.println("Failed to update time");
+  // Directly use configTime to get proper time 
+  configTime(timezone * 3600, useDST ? 3600 : 0, "pool.ntp.org", "time.nist.gov");
+  
+  // Wait for time to be set
+  time_t now = time(nullptr);
+  int retry = 0;
+  while (now < 24 * 3600 && retry < 10) {
+    delay(500);
+    now = time(nullptr);
+    retry++;
+  }
+  
+  if (now < 24 * 3600) {
+    Serial.println("NTP time sync failed");
     return false;
   }
+  
+  // Get the time components directly
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return false;
+  }
+  
+  // Update our time variables directly from the system time
+  hours = timeinfo.tm_hour;
+  minutes = timeinfo.tm_min;
+  seconds = timeinfo.tm_sec;
+  dayOfMonth = timeinfo.tm_mday;
+  month = timeinfo.tm_mon + 1; // tm_mon is 0-based
+  year = timeinfo.tm_year + 1900;
+  
+  // Get day of week (0 = Sunday, 1 = Monday, etc.)
+  int dayOfWeek = timeinfo.tm_wday;
+  
+  // Convert to string representations
+  dayOfWeekStr = getDayOfWeekShort(dayOfWeek);
+  monthStr = getMonthShort(month);
+  
+  currentHour = hours;
+  
+  timeInitialized = true;
+  lastSecondUpdate = millis();
+  lastTimeUpdate = millis();
+  
+  // Log current time
+  Serial.printf("[Time] Time set: %02d:%02d:%02d %s %s %d, %d\n", 
+      hours, minutes, seconds, dayOfWeekStr.c_str(), monthStr.c_str(), dayOfMonth, year);
+  Serial.printf("[Time] Timezone: UTC%s%g%s\n", 
+      timezone >= 0 ? "+" : "", timezone, 
+      useDST && shouldApplyDST(&timeinfo) ? " (DST active)" : "");
+  
+  return true;
 }
 
 // Update current time based on the last NTP sync (internal clock)
 void updateCurrentTime() {
   if (!timeInitialized) return;
   
-  // Calculate how many seconds have passed, with drift correction
+  // Calculate how many milliseconds have passed since last update
   unsigned long currentMillis = millis();
   unsigned long elapsedMs;
   
-  // Handle millis() rollover (occurs approximately every 49.7 days)
+  // Handle millis() rollover
   if (currentMillis < lastSecondUpdate) {
-    // Rollover occurred
-    Serial.println("[Time] Detected millis() rollover");
-    // UINT_MAX is the maximum value for unsigned long (4,294,967,295)
     elapsedMs = (UINT_MAX - lastSecondUpdate) + currentMillis + 1;
     
-    // Also reset the lastNtpMillis to avoid drift calculation errors
-    if (lastNtpMillis > currentMillis) {
-      // Force an NTP update soon to resync
-      lastTimeUpdate = 0;
+    // Force time resync after rollover
+    if (WiFi.status() == WL_CONNECTED) {
+      updateTimeAndDate();
+      return;
     }
   } else {
     elapsedMs = currentMillis - lastSecondUpdate;
   }
   
-  // Calculate hours since last NTP sync
-  float hoursSinceSync;
-  
-  // Handle rollover for this calculation as well
-  if (currentMillis < lastNtpMillis) {
-    unsigned long millisSinceSync = (UINT_MAX - lastNtpMillis) + currentMillis + 1;
-    hoursSinceSync = millisSinceSync / 3600000.0;
-  } else {
-    hoursSinceSync = (currentMillis - lastNtpMillis) / 3600000.0;
-  }
-  
-  // Adjust elapsed time by removing the calculated drift
-  // If drift correction is positive (clock runs fast), we decrease the elapsed time
-  // If drift correction is negative (clock runs slow), we increase the elapsed time
-  long correctedElapsedMs = elapsedMs;
-  
-  // Only apply correction if we've had at least one successful NTP sync
-  if (lastNtpTimestamp > 0) {
-    // Apply the drift correction relative to the last second update
-    // We adjust the elapsed time since last second update, not the total drift since NTP sync
-    float hoursSinceLastSecond = elapsedMs / 3600000.0;
-    long correctionSinceLastSecond = (long)(driftCorrection * hoursSinceLastSecond);
-    correctedElapsedMs = elapsedMs - correctionSinceLastSecond;
-    
-    // Ensure we don't go backward in time due to correction
-    if (correctedElapsedMs < 0) correctedElapsedMs = 0;
-  }
-  
   // Only update if at least one second has passed
-  if (correctedElapsedMs >= 1000) {
-    // Calculate number of seconds that have elapsed
-    int secondsToAdd = correctedElapsedMs / 1000;
+  if (elapsedMs >= 1000) {
+    // Calculate number of seconds to add
+    int secondsToAdd = elapsedMs / 1000;
     
-    // Update the last second update time more precisely
-    lastSecondUpdate = currentMillis - (correctedElapsedMs % 1000);
+    // Update the last second update time
+    lastSecondUpdate = currentMillis - (elapsedMs % 1000);
     
-    // Add the elapsed seconds
+    // Add seconds and handle minute/hour overflow
     seconds += secondsToAdd;
     
-    // Update minutes and hours as needed
     while (seconds >= 60) {
       seconds -= 60;
       minutes++;
       
-      // Log the time every minute
-      Serial.print("[Time] Current time: ");
-      Serial.print(hours);
-      Serial.print(":");
-      if (minutes < 10) Serial.print("0");
-      Serial.println(minutes);
+      // Log each minute change
+      Serial.printf("[Time] Current time: %02d:%02d\n", hours, minutes);
       
       if (minutes >= 60) {
         minutes = 0;
         hours++;
         
-        // Log the hour change
-        Serial.print("[Time] Hour changed to: ");
-        Serial.println(hours);
+        Serial.printf("[Time] Hour changed to: %02d\n", hours);
         
         if (hours >= 24) {
           hours = 0;
-          // Log the day change
-          Serial.println("[Time] Day changed");
+          Serial.println("[Time] Day changed - triggering NTP resync");
           
-          // At midnight, we should sync with NTP again to handle date changes
-          bool success = updateTimeAndDate();
-          if (!success) {
-            Serial.println("[Time] Failed to update time at day change");
+          // At midnight, sync with NTP to handle date changes
+          if (WiFi.status() == WL_CONNECTED) {
+            updateTimeAndDate();
           }
         }
       }
@@ -317,6 +166,12 @@ void updateCurrentTime() {
     
     // Update current hour for display
     currentHour = hours;
+    
+    // Force NTP resync every 30 minutes to avoid drift
+    if (minutes % 30 == 0 && seconds < 10 && WiFi.status() == WL_CONNECTED) {
+      Serial.println("[Time] Scheduled resync to prevent drift");
+      updateTimeAndDate();
+    }
   }
 }
 
@@ -398,4 +253,21 @@ void resetTimeWithNewTimezone() {
   } else {
     Serial.println("Cannot reset time - WiFi not connected");
   }
+}
+
+// Get local time with retry logic
+bool getLocalTime(struct tm * info) {
+  // Try up to 10 times to get a valid time
+  for (int i = 0; i < 10; i++) {
+    time_t now = time(nullptr);
+    struct tm *timeinfo = localtime(&now);
+    if (timeinfo) {
+      // Copy the data into the provided struct
+      memcpy(info, timeinfo, sizeof(struct tm));
+      return true;
+    }
+    delay(10);
+  }
+  
+  return false;
 }

@@ -186,7 +186,7 @@ namespace Weather {
             String payload = http.getString();
             
             // Parse JSON using ArduinoJson with specified capacity
-            StaticJsonDocument<CURRENT_WEATHER_JSON_SIZE> doc;
+            JsonDocument doc;
             DeserializationError error = deserializeJson(doc, payload);
             
             if (!error) {
@@ -256,7 +256,7 @@ namespace Weather {
                     WiFiClient* stream = http.getStreamPtr();
                     
                     // Create a document for parsing with appropriate size
-                    StaticJsonDocument<FORECAST_JSON_SIZE> doc;
+                    JsonDocument doc;
                     
                     // Use the JSON parser in stream mode
                     DeserializationError error = deserializeJson(doc, *stream);

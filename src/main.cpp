@@ -34,8 +34,6 @@ void setup() {
   
   // Check if WiFi credentials exist
   uint8_t configFlag = EEPROM.read(CONFIG_FLAG_OFFSET);
-  uint8_t ssidLen = EEPROM.read(CONFIG_FLAG_OFFSET + 1);
-  uint8_t passLen = EEPROM.read(CONFIG_FLAG_OFFSET + 2);
   
   if (configFlag != CONFIG_FLAG) {
     Serial.println("No valid WiFi configuration found");
@@ -164,6 +162,11 @@ void setup() {
       lastSecondUpdate = millis();
     }
     
+    // Force a second NTP sync to improve initial accuracy
+    delay(1000);
+    Serial.println("[Time] Performing secondary time sync for accuracy...");
+    updateTimeAndDate();
+    
     // Fetch weather data
     drawConnectingScreen("Fetching", "weather data");
     bool weatherSuccess = Weather::fetchWeatherData();
@@ -245,8 +248,8 @@ void loop() {
     // Clock updates
     updateCurrentTime();
     
-    // Periodic NTP time update every 10 minutes (reduced from 30 minutes for better accuracy)
-    if (millis() - lastTimeUpdate >= 10 * 60 * 1000) {
+    // Periodic NTP time update every 5 minutes (reduced from 10 minutes for better accuracy)
+    if (millis() - lastTimeUpdate >= 5 * 60 * 1000) {
       Serial.println("[Time] Time update initiated...");
       bool timeUpdateSuccess = updateTimeAndDate();
       if (timeUpdateSuccess) {

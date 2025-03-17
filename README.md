@@ -87,7 +87,7 @@ Once connected to your WiFi network, you can access the device's settings page:
   - [x] Temperature unit toggle (°C/°F)
 
 - Time Settings
-  - [ ] Daylight saving time configuration
+  - [x] Daylight saving time configuration
   - [ ] NTP server configuration
 
 - System Features
@@ -98,7 +98,7 @@ Once connected to your WiFi network, you can access the device's settings page:
 
 The following issues are currently being tracked and worked on:
 
-1. **Sunset to Sunrise Progression**: The sunset to sunrise transition feature is currently not functioning as expected and is under investigation. The sunrise to sunset progression is working correctly.
+[none... please let me know if you find any issues]
 
 ## Contributing
 

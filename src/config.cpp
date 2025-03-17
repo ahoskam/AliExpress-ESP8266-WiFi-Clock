@@ -60,6 +60,7 @@ unsigned long lastTimeUpdate = 0;
 unsigned long lastSecondUpdate = 0;
 float timezone = -5.0; // Default to Eastern Time (UTC-5)
 bool use12HourFormat = false; // Default to 24-hour format
+bool useDST = true; // Default to using DST calculations
 long driftCorrection = 0; // No drift correction by default
 unsigned long lastNtpTimestamp = 0; // Last NTP time in seconds
 unsigned long lastNtpMillis = 0; // millis() value at last NTP sync

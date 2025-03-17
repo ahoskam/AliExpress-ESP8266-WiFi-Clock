@@ -261,6 +261,12 @@ const char WEATHER_SETTINGS_HTML[] PROGMEM = R"rawliteral(
         <select id='timezone' name='timezone'>
         </select><br>
         
+        <label for='dst'>Daylight Saving Time:</label>
+        <select id='dst' name='dst'>
+          <option value='0' %DST_OFF_SELECTED%>Disabled (Manual timezone only)</option>
+          <option value='1' %DST_ON_SELECTED%>Enabled (Automatic DST adjustment)</option>
+        </select><br>
+        
         <label for='timeFormat'>Time Format:</label>
         <select id='timeFormat' name='timeFormat'>
           <option value='0' %24HOUR_SELECTED%>24-hour (e.g., 14:30)</option>
