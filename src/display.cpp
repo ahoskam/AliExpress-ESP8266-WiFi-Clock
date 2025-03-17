@@ -189,35 +189,47 @@ void drawTimeScreen() {
     }
   } else {
     // For nighttime, calculate percentage through the night
-    if (sunriseMinutes > sunsetMinutes) {
-      // Normal night case (sunset today -> sunrise tomorrow)
-      int nightLength = (24 * 60) - sunsetMinutes + sunriseMinutes;
-      int minutesSinceSunset;
+    // Rethinking this part completely for correct nighttime tracking
+    
+    // Night has two parts:
+    // 1. From sunset to midnight
+    // 2. From midnight to sunrise
+    
+    int totalNightMinutes;
+    int minutesThroughNight;
+    
+    if (sunsetMinutes < sunriseMinutes) {
+      // Normal case: sunset today -> sunrise tomorrow
+      totalNightMinutes = sunriseMinutes - sunsetMinutes;
       
       if (currentMinutes >= sunsetMinutes) {
-        // After sunset, before midnight
-        minutesSinceSunset = currentMinutes - sunsetMinutes;
+        // Evening: after sunset, before midnight
+        minutesThroughNight = currentMinutes - sunsetMinutes;
       } else {
-        // After midnight, before sunrise
-        minutesSinceSunset = (24 * 60) - sunsetMinutes + currentMinutes;
+        // Morning: after midnight, before sunrise
+        minutesThroughNight = (24 * 60 - sunsetMinutes) + currentMinutes;
       }
-      
-      // Ensure values are valid
-      nightLength = max(1, nightLength);
-      minutesSinceSunset = max(0, min(minutesSinceSunset, nightLength));
-      
-      progressPercent = (float)minutesSinceSunset / nightLength;
     } else {
-      // Unusual night case (sunset tomorrow -> sunrise today)
-      int nightLength = sunriseMinutes - sunsetMinutes;
-      int minutesSinceSunset = currentMinutes - sunsetMinutes;
+      // Edge case: sunset tomorrow -> sunrise today (e.g., near polar region)
+      totalNightMinutes = (24 * 60) - sunsetMinutes + sunriseMinutes;
       
-      // Ensure values are valid
-      nightLength = max(1, nightLength);
-      minutesSinceSunset = max(0, min(minutesSinceSunset, nightLength));
-      
-      progressPercent = (float)minutesSinceSunset / nightLength;
+      if (currentMinutes <= sunriseMinutes) {
+        // Morning: after midnight, before sunrise
+        minutesThroughNight = currentMinutes + (24 * 60 - sunsetMinutes);
+      } else if (currentMinutes >= sunsetMinutes) {
+        // Evening: after sunset, before midnight
+        minutesThroughNight = currentMinutes - sunsetMinutes;
+      } else {
+        // Middle of the day - should be daytime, but if we're here, use 0
+        minutesThroughNight = 0;
+      }
     }
+    
+    // Safety check for division by zero
+    totalNightMinutes = max(1, totalNightMinutes);
+    minutesThroughNight = max(0, min(minutesThroughNight, totalNightMinutes));
+    
+    progressPercent = (float)minutesThroughNight / totalNightMinutes;
   }
   
   // Constrain progress to valid range
